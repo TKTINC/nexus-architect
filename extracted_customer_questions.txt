@@ -1,0 +1,72 @@
+Customer Evaluation Questions Extracted:
+
+BUSINESS IMPACT & ROI:
+- Will this actually move the needle for OUR business?
+- Can you show me 3 similar companies who achieved 30% productivity gains with specific dollar amounts?
+- How do we measure success - are you willing to tie pricing to productivity outcomes?
+- What's the realistic timeline to see ROI given our current 18-month release cycles?
+- If this doesn't deliver promised results, what compensation do we get?
+
+COMPETITIVE ADVANTAGE:
+- How does this make us better than our competitors?
+- Our main competitor just hired 50 more developers - how does Nexus Architect beat that?
+- What happens when our competitors buy the same platform? Do we lose our advantage?
+- Will this help us move faster in AI/ML development specifically? (Our strategic priority)
+- Will this make us dependent on your platform vs giving us edge?
+
+STRATEGIC FIT:
+- Does this align with where we're going?
+- We're planning to acquire a fintech company next year - how does this handle M&A integration?
+- We're migrating from Java 8 to Go microservices - how will this adapt?
+- We're considering outsourcing some development to Eastern Europe - how does this work globally?
+- How does this fit with our existing $2M investment in Datadog/New Relic monitoring?
+
+TECHNICAL REALITY CHECK:
+- We have 15 years of legacy code, custom build systems, and 3 different documentation tools - can this handle that?
+- Our Git repos contain proprietary algorithms worth $50M+ - how do you ensure zero data leakage?
+- We use Bitbucket, Azure DevOps, and GitHub across teams - does this support all simultaneously?
+- What happens when we inevitably change tools (we're evaluating Linear vs. Jira right now)?
+
+PERFORMANCE & SCALE:
+- With our loaded 2,000 users, 500 repositories, what's the latency for complex queries at 9 AM peak?
+- Based on 10 million lines of code, how long will initial ingestion take?
+- What's your uptime SLA? We can't have our team tagged out.
+
+AI ACCURACY & TRUST:
+- How do we know the AI won't give us wrong answers?
+- What are the specific metrics for accuracy (especially for highly regulated industries)?
+- How do we confidently validate architectural recommendations before implementing them?
+- What's our liability if autonomous features break something?
+
+SECURITY & COMPLIANCE:
+- Can we trust this with our most sensitive data (SOC2, HIPAA, PCI DSS certified)?
+- Where exactly is our data stored? Who has access to it?
+- What are the data patterns for audit compliance?
+- What's your incident response plan?
+
+CHANGE MANAGEMENT & ADOPTION:
+- How do we get people to actually use this?
+- Our developers are skeptical of AI - what's the training/change management?
+- How much time away from actual development?
+- How do we handle resistance from senior developers who feel threatened?
+- How do we get 80% of our engineering org onboard?
+
+SUPPORT & RELIABILITY:
+- What's your support model for P1 issues affecting our development?
+- Who's on your team? What's your background in enterprise vs startup environments?
+- How quickly can we get responses to critical questions?
+
+TOTAL COST OF OWNERSHIP:
+- Beyond licensing, what infrastructure costs should we expect?
+- What internal IT resources will this require?
+- Are there usage-based pricing spikes we need to plan for?
+
+VENDOR RISK ASSESSMENT:
+- How long will you be around? What's your path to profitability?
+- What happens if you get acquired by Microsoft/Google and they discontinue this?
+
+TECHNOLOGY EVOLUTION:
+- How do you stay current with rapid AI changes (GPT-5, Claude-4)?
+- How do you keep up with major platform updates every 6 months?
+- What's your R&D investment to maintain competitive capabilities?
+

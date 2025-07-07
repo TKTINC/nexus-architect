@@ -1,0 +1,64 @@
+CEO/CTO Questions Extracted from Pages Document:
+
+RISK MANAGEMENT:
+- What could go catastrophically wrong?
+- What happens when the AI makes a autonomous decision that costs us $1M?
+- How do we handle IP leakage if accident exposes confidential code docs?
+- What if employees break customer systems?
+- What about compliance when AI is managing business-critical systems?
+
+CTO TECHNICAL REALITY CHECK:
+- Will this actually work at enterprise scale?
+- How does performance degrade as we ingest 10TB of organizational data?
+- What's the latency for complex queries across git, jira, confluence with 100+ concurrent users?
+- How do systems handle constantly changing data?
+- What's the disaster recovery strategy for the knowledge graph?
+
+AI ACCURACY & RELIABILITY:
+- How do we ensure AI won't hallucinate in production?
+- What's the actual accuracy rate (not cherry-picked demos)?
+- How do we validate AI reasoning when combining data from multiple sources?
+- What about false positives when AI hasn't seen certain scenarios before?
+
+INTEGRATION & CHANGE MANAGEMENT:
+- How does this integrate with existing workflows?
+- What's the burden on development teams?
+- How do we handle different teams using different tools (some use Jira, others Linear)?
+- What if we migrate from Confluence to Notion next year?
+
+SECURITY & COMPLIANCE:
+- Can we trust this with our most sensitive data?
+- How do we maintain SOC2, GDPR compliance?
+- How do we process all organizational data while preventing AI from inadvertently exposing it?
+- What about audit trails?
+- What's the risk depending on OpenAI/Anthropic?
+- How do we maintain API compatibility as GPT-5 approaches?
+- What if we hit 500+ API calls simultaneously?
+- What about total cost with 1000+ employees?
+
+EXECUTIVE CONCERNS:
+- How do we prevent "AI tells them what to do" syndrome?
+- How do executives get value without losing decision-making authority?
+- Can this deliver ROI and support 10k+ users?
+
+METRICS & KPIs:
+- What are specific, measurable success criteria for 6, 12, 18 months?
+- How do we separate correlation from causation in productivity improvements?
+- What are leading indicators vs lagging indicators?
+- How do we benchmark against competitors?
+- What if we've spent $10M with no clear ROI?
+
+TECHNOLOGY ROADMAP:
+- What's the ownership model including infrastructure costs?
+- How do capabilities get acquired and integrated?
+- What's the evolution path?
+
+THE ULTIMATE QUESTION:
+- How do we avoid "shiny object syndrome"?
+- Which problems does this actually solve that are cheaper/better than alternatives?
+- How do we align expectations with reality?
+- What's our framework for saying no to feature requests?
+- What are the show-stopper assumptions?
+- At what point do we cut losses if this turns out to be a bad investment?
+- How do we maximize learning while minimizing risk?
+
