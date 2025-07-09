@@ -1,0 +1,373 @@
+version: '3.8'
+
+# Nexus Architect - Local Development Environment
+# BDT-P1 Deliverable #2: Local development containerization
+# Version: 1.0
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: nexus-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nexus_dev
+      POSTGRES_USER: nexus_dev
+      POSTGRES_PASSWORD: nexus_dev_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - ~/nexus-dev/logs/postgres:/var/log/postgresql
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus_dev -d nexus_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis-dev
+    restart: unless-stopped
+    command: redis-server --requirepass nexus_redis_password --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ~/nexus-dev/logs/redis:/var/log/redis
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Elasticsearch for Logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: nexus-elasticsearch-dev
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana for Log Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: nexus-kibana-dev
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Prometheus for Metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nexus-prometheus-dev
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nexus-grafana-dev
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=nexus_grafana_admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_PROTOCOL=https
+      - GF_SERVER_CERT_FILE=/etc/ssl/certs/server-cert.pem
+      - GF_SERVER_CERT_KEY=/etc/ssl/private/server-key.pem
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ~/nexus-dev/certs/ssl/server-cert.pem:/etc/ssl/certs/server-cert.pem:ro
+      - ~/nexus-dev/certs/ssl/server-key.pem:/etc/ssl/private/server-key.pem:ro
+    depends_on:
+      - prometheus
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # NGINX Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: nexus-nginx-dev
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ~/nexus-dev/certs/ssl:/etc/nginx/ssl:ro
+      - ~/nexus-dev/logs/nginx:/var/log/nginx
+    depends_on:
+      - ws1-core-api
+      - ws2-ai-api
+      - ws5-frontend
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # WS1 Core Foundation API
+  ws1-core-api:
+    build:
+      context: ../../implementation/WS1_Core_Foundation
+      dockerfile: Dockerfile.dev
+    container_name: nexus-ws1-core-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://nexus_dev:nexus_dev_password@postgres:5432/nexus_dev
+      - REDIS_URL=redis://:nexus_redis_password@redis:6379
+      - JWT_SECRET=nexus_jwt_secret_key_for_development_only
+    ports:
+      - "8001:8000"
+    volumes:
+      - ../../implementation/WS1_Core_Foundation:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # WS2 AI Intelligence API
+  ws2-ai-api:
+    build:
+      context: ../../implementation/WS2_AI_Intelligence
+      dockerfile: Dockerfile.dev
+    container_name: nexus-ws2-ai-dev
+    restart: unless-stopped
+    environment:
+      - PYTHON_ENV=development
+      - DATABASE_URL=postgresql://nexus_dev:nexus_dev_password@postgres:5432/nexus_dev
+      - REDIS_URL=redis://:nexus_redis_password@redis:6379
+    ports:
+      - "8002:8000"
+    volumes:
+      - ../../implementation/WS2_AI_Intelligence:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # WS3 Data Ingestion API
+  ws3-data-api:
+    build:
+      context: ../../implementation/WS3_Data_Ingestion
+      dockerfile: Dockerfile.dev
+    container_name: nexus-ws3-data-dev
+    restart: unless-stopped
+    environment:
+      - PYTHON_ENV=development
+      - DATABASE_URL=postgresql://nexus_dev:nexus_dev_password@postgres:5432/nexus_dev
+      - REDIS_URL=redis://:nexus_redis_password@redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    ports:
+      - "8003:8000"
+    volumes:
+      - ../../implementation/WS3_Data_Ingestion:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # WS4 Autonomous Capabilities API
+  ws4-autonomous-api:
+    build:
+      context: ../../implementation/WS4_Autonomous_Capabilities
+      dockerfile: Dockerfile.dev
+    container_name: nexus-ws4-autonomous-dev
+    restart: unless-stopped
+    environment:
+      - PYTHON_ENV=development
+      - DATABASE_URL=postgresql://nexus_dev:nexus_dev_password@postgres:5432/nexus_dev
+      - REDIS_URL=redis://:nexus_redis_password@redis:6379
+    ports:
+      - "8004:8000"
+    volumes:
+      - ../../implementation/WS4_Autonomous_Capabilities:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # WS5 Multi-Role Interfaces Frontend
+  ws5-frontend:
+    build:
+      context: ../../implementation/WS5_Multi_Role_Interfaces/Phase1_Design_System/nexus-ui-framework
+      dockerfile: Dockerfile.dev
+    container_name: nexus-ws5-frontend-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_BASE_URL=https://localhost/api
+      - REACT_APP_WS1_API_URL=https://localhost/api/ws1
+      - REACT_APP_WS2_API_URL=https://localhost/api/ws2
+      - REACT_APP_WS3_API_URL=https://localhost/api/ws3
+      - REACT_APP_WS4_API_URL=https://localhost/api/ws4
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../implementation/WS5_Multi_Role_Interfaces/Phase1_Design_System/nexus-ui-framework:/app
+      - /app/node_modules
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # WS5 Executive Dashboard
+  ws5-executive:
+    build:
+      context: ../../implementation/WS5_Multi_Role_Interfaces/Phase2_Executive_Dashboard/executive-dashboard
+      dockerfile: Dockerfile.dev
+    container_name: nexus-ws5-executive-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_BASE_URL=https://localhost/api
+    ports:
+      - "3001:3000"
+    volumes:
+      - ../../implementation/WS5_Multi_Role_Interfaces/Phase2_Executive_Dashboard/executive-dashboard:/app
+      - /app/node_modules
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Development Tools Container
+  dev-tools:
+    image: alpine:latest
+    container_name: nexus-dev-tools
+    restart: unless-stopped
+    command: tail -f /dev/null
+    volumes:
+      - ../../:/workspace
+      - ~/nexus-dev:/nexus-dev
+    networks:
+      - nexus-network
+    working_dir: /workspace
+
+# Networks
+networks:
+  nexus-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
