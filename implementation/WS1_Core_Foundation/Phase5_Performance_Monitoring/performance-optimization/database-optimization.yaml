@@ -1,0 +1,804 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: database-optimization-config
+  namespace: nexus-infrastructure
+data:
+  postgresql_optimization.conf: |
+    # PostgreSQL Performance Optimization Configuration
+    
+    # Memory Settings
+    shared_buffers = '2GB'                    # 25% of total RAM
+    effective_cache_size = '6GB'              # 75% of total RAM
+    work_mem = '64MB'                         # Per operation memory
+    maintenance_work_mem = '512MB'            # Maintenance operations
+    
+    # Checkpoint Settings
+    checkpoint_completion_target = 0.9
+    checkpoint_timeout = '15min'
+    max_wal_size = '4GB'
+    min_wal_size = '1GB'
+    
+    # Connection Settings
+    max_connections = 200
+    shared_preload_libraries = 'pg_stat_statements,auto_explain'
+    
+    # Query Planner Settings
+    random_page_cost = 1.1                   # SSD optimization
+    effective_io_concurrency = 200           # SSD concurrent I/O
+    
+    # Logging Settings
+    log_statement = 'mod'                    # Log modifications
+    log_min_duration_statement = 1000       # Log slow queries (1s+)
+    log_checkpoints = on
+    log_connections = on
+    log_disconnections = on
+    log_lock_waits = on
+    
+    # Auto Explain Settings
+    auto_explain.log_min_duration = '1s'
+    auto_explain.log_analyze = on
+    auto_explain.log_buffers = on
+    auto_explain.log_timing = on
+    auto_explain.log_triggers = on
+    auto_explain.log_verbose = on
+    auto_explain.log_nested_statements = on
+    
+    # Statistics Settings
+    track_activities = on
+    track_counts = on
+    track_io_timing = on
+    track_functions = all
+    
+    # Vacuum Settings
+    autovacuum = on
+    autovacuum_max_workers = 4
+    autovacuum_naptime = '30s'
+    autovacuum_vacuum_threshold = 50
+    autovacuum_analyze_threshold = 50
+    autovacuum_vacuum_scale_factor = 0.1
+    autovacuum_analyze_scale_factor = 0.05
+    
+  database_monitoring.sql: |
+    -- Database Performance Monitoring Queries
+    
+    -- Create monitoring views
+    CREATE OR REPLACE VIEW nexus_performance_stats AS
+    SELECT 
+        schemaname,
+        tablename,
+        attname,
+        n_distinct,
+        correlation,
+        most_common_vals,
+        most_common_freqs
+    FROM pg_stats 
+    WHERE schemaname NOT IN ('information_schema', 'pg_catalog');
+    
+    -- Index usage statistics
+    CREATE OR REPLACE VIEW nexus_index_usage AS
+    SELECT 
+        schemaname,
+        tablename,
+        indexname,
+        idx_tup_read,
+        idx_tup_fetch,
+        idx_scan,
+        CASE 
+            WHEN idx_scan = 0 THEN 'Unused'
+            WHEN idx_scan < 10 THEN 'Low Usage'
+            WHEN idx_scan < 100 THEN 'Medium Usage'
+            ELSE 'High Usage'
+        END as usage_category
+    FROM pg_stat_user_indexes
+    ORDER BY idx_scan DESC;
+    
+    -- Table size and bloat estimation
+    CREATE OR REPLACE VIEW nexus_table_bloat AS
+    SELECT 
+        schemaname,
+        tablename,
+        pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as total_size,
+        pg_size_pretty(pg_relation_size(schemaname||'.'||tablename)) as table_size,
+        pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) as index_size,
+        n_tup_ins,
+        n_tup_upd,
+        n_tup_del,
+        n_live_tup,
+        n_dead_tup,
+        CASE 
+            WHEN n_live_tup > 0 
+            THEN round((n_dead_tup::float / n_live_tup::float) * 100, 2)
+            ELSE 0 
+        END as bloat_percentage
+    FROM pg_stat_user_tables
+    ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+    
+    -- Slow query analysis
+    CREATE OR REPLACE VIEW nexus_slow_queries AS
+    SELECT 
+        query,
+        calls,
+        total_time,
+        mean_time,
+        rows,
+        100.0 * shared_blks_hit / nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent
+    FROM pg_stat_statements 
+    WHERE mean_time > 1000  -- Queries taking more than 1 second on average
+    ORDER BY mean_time DESC;
+    
+    -- Connection and activity monitoring
+    CREATE OR REPLACE VIEW nexus_connection_stats AS
+    SELECT 
+        state,
+        count(*) as connection_count,
+        max(now() - state_change) as max_duration,
+        avg(now() - state_change) as avg_duration
+    FROM pg_stat_activity 
+    WHERE state IS NOT NULL
+    GROUP BY state;
+    
+  optimization_procedures.sql: |
+    -- Database Optimization Procedures
+    
+    -- Procedure to analyze and optimize tables
+    CREATE OR REPLACE FUNCTION nexus_optimize_table(table_name text)
+    RETURNS text AS $$
+    DECLARE
+        result text;
+    BEGIN
+        -- Analyze table
+        EXECUTE 'ANALYZE ' || table_name;
+        
+        -- Check if vacuum is needed
+        IF (SELECT n_dead_tup FROM pg_stat_user_tables WHERE relname = table_name) > 1000 THEN
+            EXECUTE 'VACUUM ANALYZE ' || table_name;
+            result := 'Table ' || table_name || ' vacuumed and analyzed';
+        ELSE
+            result := 'Table ' || table_name || ' analyzed only';
+        END IF;
+        
+        RETURN result;
+    END;
+    $$ LANGUAGE plpgsql;
+    
+    -- Procedure to identify missing indexes
+    CREATE OR REPLACE FUNCTION nexus_suggest_indexes()
+    RETURNS TABLE(
+        table_name text,
+        column_name text,
+        seq_scan bigint,
+        seq_tup_read bigint,
+        suggestion text
+    ) AS $$
+    BEGIN
+        RETURN QUERY
+        SELECT 
+            st.relname::text,
+            'N/A'::text,
+            st.seq_scan,
+            st.seq_tup_read,
+            CASE 
+                WHEN st.seq_scan > 1000 AND st.seq_tup_read > 100000 
+                THEN 'Consider adding index - high sequential scans'
+                ELSE 'OK'
+            END::text
+        FROM pg_stat_user_tables st
+        WHERE st.seq_scan > 100
+        ORDER BY st.seq_scan DESC;
+    END;
+    $$ LANGUAGE plpgsql;
+    
+    -- Procedure to optimize database
+    CREATE OR REPLACE FUNCTION nexus_optimize_database()
+    RETURNS text AS $$
+    DECLARE
+        table_record RECORD;
+        result text := '';
+    BEGIN
+        -- Update statistics
+        ANALYZE;
+        
+        -- Optimize each table
+        FOR table_record IN 
+            SELECT schemaname, tablename 
+            FROM pg_tables 
+            WHERE schemaname NOT IN ('information_schema', 'pg_catalog')
+        LOOP
+            SELECT nexus_optimize_table(table_record.schemaname || '.' || table_record.tablename) INTO result;
+        END LOOP;
+        
+        -- Reindex if needed
+        REINDEX DATABASE nexus_architect;
+        
+        RETURN 'Database optimization completed';
+    END;
+    $$ LANGUAGE plpgsql;
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: database-optimizer
+  namespace: nexus-infrastructure
+  labels:
+    app: database-optimizer
+    component: performance
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: database-optimizer
+            component: performance
+        spec:
+          serviceAccountName: nexus-infrastructure
+          restartPolicy: OnFailure
+          containers:
+          - name: db-optimizer
+            image: postgres:15
+            env:
+            - name: PGHOST
+              value: "postgresql.nexus-infrastructure"
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: "nexus_architect"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secrets
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secrets
+                  key: password
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Wait for database to be ready
+              until pg_isready -h $PGHOST -p $PGPORT -U $PGUSER; do
+                echo "Waiting for database..."
+                sleep 5
+              done
+              
+              echo "Starting database optimization..."
+              
+              # Run optimization procedures
+              psql -c "SELECT nexus_optimize_database();"
+              
+              # Generate performance report
+              echo "=== Database Performance Report ===" > /tmp/db_report.txt
+              echo "Generated at: $(date)" >> /tmp/db_report.txt
+              echo "" >> /tmp/db_report.txt
+              
+              echo "=== Table Sizes ===" >> /tmp/db_report.txt
+              psql -c "SELECT * FROM nexus_table_bloat LIMIT 10;" >> /tmp/db_report.txt
+              echo "" >> /tmp/db_report.txt
+              
+              echo "=== Index Usage ===" >> /tmp/db_report.txt
+              psql -c "SELECT * FROM nexus_index_usage WHERE usage_category = 'Unused' LIMIT 10;" >> /tmp/db_report.txt
+              echo "" >> /tmp/db_report.txt
+              
+              echo "=== Slow Queries ===" >> /tmp/db_report.txt
+              psql -c "SELECT query, calls, mean_time FROM nexus_slow_queries LIMIT 5;" >> /tmp/db_report.txt
+              echo "" >> /tmp/db_report.txt
+              
+              echo "=== Connection Stats ===" >> /tmp/db_report.txt
+              psql -c "SELECT * FROM nexus_connection_stats;" >> /tmp/db_report.txt
+              
+              echo "Database optimization completed successfully"
+              cat /tmp/db_report.txt
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database-performance-monitor
+  namespace: nexus-infrastructure
+  labels:
+    app: database-performance-monitor
+    component: performance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database-performance-monitor
+  template:
+    metadata:
+      labels:
+        app: database-performance-monitor
+        component: performance
+    spec:
+      serviceAccountName: nexus-infrastructure
+      containers:
+      - name: db-monitor
+        image: python:3.11-slim
+        ports:
+        - name: http
+          containerPort: 8091
+        - name: metrics
+          containerPort: 9094
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://$(PGUSER):$(PGPASSWORD)@postgresql.nexus-infrastructure:5432/nexus_architect"
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secrets
+              key: username
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secrets
+              key: password
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install required packages
+          pip install fastapi uvicorn psycopg2-binary sqlalchemy \
+                     prometheus-client pandas numpy asyncio asyncpg
+          
+          # Create database performance monitor
+          cat > /app/db_monitor.py <<'EOF'
+          """
+          Database Performance Monitor
+          Real-time database performance monitoring and optimization
+          """
+          
+          import os
+          import asyncio
+          import logging
+          from datetime import datetime, timedelta
+          from typing import Dict, List, Any, Optional
+          
+          from fastapi import FastAPI, HTTPException
+          from pydantic import BaseModel
+          import asyncpg
+          import pandas as pd
+          import numpy as np
+          from prometheus_client import Counter, Histogram, Gauge, start_http_server
+          
+          # Configure logging
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          # Prometheus metrics
+          db_connections = Gauge('db_connections_active', 'Active database connections')
+          db_query_duration = Histogram('db_query_duration_seconds', 'Database query duration', ['query_type'])
+          db_table_size = Gauge('db_table_size_bytes', 'Database table size', ['table_name'])
+          db_index_usage = Gauge('db_index_usage_ratio', 'Index usage ratio', ['index_name'])
+          db_bloat_percentage = Gauge('db_table_bloat_percentage', 'Table bloat percentage', ['table_name'])
+          
+          app = FastAPI(
+              title="Database Performance Monitor",
+              description="Real-time database performance monitoring",
+              version="1.0.0"
+          )
+          
+          class DatabaseStats(BaseModel):
+              connections: Dict[str, int]
+              table_sizes: List[Dict[str, Any]]
+              index_usage: List[Dict[str, Any]]
+              slow_queries: List[Dict[str, Any]]
+              bloat_stats: List[Dict[str, Any]]
+          
+          class DatabaseMonitor:
+              def __init__(self):
+                  self.db_pool = None
+                  self.database_url = os.getenv("DATABASE_URL")
+              
+              async def initialize(self):
+                  """Initialize database connection pool"""
+                  try:
+                      self.db_pool = await asyncpg.create_pool(
+                          self.database_url,
+                          min_size=2,
+                          max_size=10,
+                          command_timeout=60
+                      )
+                      logger.info("Database connection pool initialized")
+                  except Exception as e:
+                      logger.error(f"Failed to initialize database pool: {e}")
+                      raise
+              
+              async def get_connection_stats(self) -> Dict[str, int]:
+                  """Get database connection statistics"""
+                  try:
+                      async with self.db_pool.acquire() as conn:
+                          query = """
+                          SELECT state, count(*) as count
+                          FROM pg_stat_activity 
+                          WHERE state IS NOT NULL
+                          GROUP BY state
+                          """
+                          rows = await conn.fetch(query)
+                          
+                          stats = {}
+                          total_connections = 0
+                          for row in rows:
+                              stats[row['state']] = row['count']
+                              total_connections += row['count']
+                          
+                          stats['total'] = total_connections
+                          
+                          # Update Prometheus metrics
+                          db_connections.set(total_connections)
+                          
+                          return stats
+                  except Exception as e:
+                      logger.error(f"Error getting connection stats: {e}")
+                      return {}
+              
+              async def get_table_sizes(self) -> List[Dict[str, Any]]:
+                  """Get table size statistics"""
+                  try:
+                      async with self.db_pool.acquire() as conn:
+                          query = """
+                          SELECT 
+                              schemaname,
+                              tablename,
+                              pg_total_relation_size(schemaname||'.'||tablename) as total_size,
+                              pg_relation_size(schemaname||'.'||tablename) as table_size,
+                              pg_indexes_size(schemaname||'.'||tablename) as index_size,
+                              n_live_tup,
+                              n_dead_tup
+                          FROM pg_stat_user_tables
+                          ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
+                          LIMIT 20
+                          """
+                          rows = await conn.fetch(query)
+                          
+                          table_sizes = []
+                          for row in rows:
+                              table_info = {
+                                  'schema': row['schemaname'],
+                                  'table': row['tablename'],
+                                  'total_size': row['total_size'],
+                                  'table_size': row['table_size'],
+                                  'index_size': row['index_size'],
+                                  'live_tuples': row['n_live_tup'],
+                                  'dead_tuples': row['n_dead_tup']
+                              }
+                              table_sizes.append(table_info)
+                              
+                              # Update Prometheus metrics
+                              db_table_size.labels(table_name=f"{row['schemaname']}.{row['tablename']}").set(row['total_size'])
+                          
+                          return table_sizes
+                  except Exception as e:
+                      logger.error(f"Error getting table sizes: {e}")
+                      return []
+              
+              async def get_index_usage(self) -> List[Dict[str, Any]]:
+                  """Get index usage statistics"""
+                  try:
+                      async with self.db_pool.acquire() as conn:
+                          query = """
+                          SELECT 
+                              schemaname,
+                              tablename,
+                              indexname,
+                              idx_scan,
+                              idx_tup_read,
+                              idx_tup_fetch,
+                              CASE 
+                                  WHEN idx_scan = 0 THEN 0
+                                  ELSE round((idx_tup_fetch::float / idx_tup_read::float) * 100, 2)
+                              END as efficiency_ratio
+                          FROM pg_stat_user_indexes
+                          ORDER BY idx_scan DESC
+                          LIMIT 20
+                          """
+                          rows = await conn.fetch(query)
+                          
+                          index_usage = []
+                          for row in rows:
+                              index_info = {
+                                  'schema': row['schemaname'],
+                                  'table': row['tablename'],
+                                  'index': row['indexname'],
+                                  'scans': row['idx_scan'],
+                                  'tuples_read': row['idx_tup_read'],
+                                  'tuples_fetched': row['idx_tup_fetch'],
+                                  'efficiency_ratio': row['efficiency_ratio'] or 0
+                              }
+                              index_usage.append(index_info)
+                              
+                              # Update Prometheus metrics
+                              efficiency = row['efficiency_ratio'] or 0
+                              db_index_usage.labels(index_name=f"{row['schemaname']}.{row['indexname']}").set(efficiency / 100)
+                          
+                          return index_usage
+                  except Exception as e:
+                      logger.error(f"Error getting index usage: {e}")
+                      return []
+              
+              async def get_slow_queries(self) -> List[Dict[str, Any]]:
+                  """Get slow query statistics"""
+                  try:
+                      async with self.db_pool.acquire() as conn:
+                          # Check if pg_stat_statements extension is available
+                          check_query = """
+                          SELECT EXISTS (
+                              SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'
+                          ) as has_extension
+                          """
+                          result = await conn.fetchrow(check_query)
+                          
+                          if not result['has_extension']:
+                              return [{"note": "pg_stat_statements extension not available"}]
+                          
+                          query = """
+                          SELECT 
+                              left(query, 100) as query_snippet,
+                              calls,
+                              total_time,
+                              mean_time,
+                              rows,
+                              100.0 * shared_blks_hit / nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent
+                          FROM pg_stat_statements 
+                          WHERE mean_time > 100  -- Queries taking more than 100ms on average
+                          ORDER BY mean_time DESC
+                          LIMIT 10
+                          """
+                          rows = await conn.fetch(query)
+                          
+                          slow_queries = []
+                          for row in rows:
+                              query_info = {
+                                  'query_snippet': row['query_snippet'],
+                                  'calls': row['calls'],
+                                  'total_time': row['total_time'],
+                                  'mean_time': row['mean_time'],
+                                  'rows': row['rows'],
+                                  'hit_percent': row['hit_percent'] or 0
+                              }
+                              slow_queries.append(query_info)
+                          
+                          return slow_queries
+                  except Exception as e:
+                      logger.error(f"Error getting slow queries: {e}")
+                      return []
+              
+              async def get_bloat_stats(self) -> List[Dict[str, Any]]:
+                  """Get table bloat statistics"""
+                  try:
+                      async with self.db_pool.acquire() as conn:
+                          query = """
+                          SELECT 
+                              schemaname,
+                              tablename,
+                              n_live_tup,
+                              n_dead_tup,
+                              CASE 
+                                  WHEN n_live_tup > 0 
+                                  THEN round((n_dead_tup::float / n_live_tup::float) * 100, 2)
+                                  ELSE 0 
+                              END as bloat_percentage,
+                              last_vacuum,
+                              last_autovacuum,
+                              last_analyze,
+                              last_autoanalyze
+                          FROM pg_stat_user_tables
+                          WHERE n_dead_tup > 100
+                          ORDER BY n_dead_tup DESC
+                          LIMIT 20
+                          """
+                          rows = await conn.fetch(query)
+                          
+                          bloat_stats = []
+                          for row in rows:
+                              bloat_info = {
+                                  'schema': row['schemaname'],
+                                  'table': row['tablename'],
+                                  'live_tuples': row['n_live_tup'],
+                                  'dead_tuples': row['n_dead_tup'],
+                                  'bloat_percentage': row['bloat_percentage'] or 0,
+                                  'last_vacuum': row['last_vacuum'].isoformat() if row['last_vacuum'] else None,
+                                  'last_autovacuum': row['last_autovacuum'].isoformat() if row['last_autovacuum'] else None,
+                                  'last_analyze': row['last_analyze'].isoformat() if row['last_analyze'] else None,
+                                  'last_autoanalyze': row['last_autoanalyze'].isoformat() if row['last_autoanalyze'] else None
+                              }
+                              bloat_stats.append(bloat_info)
+                              
+                              # Update Prometheus metrics
+                              bloat_pct = row['bloat_percentage'] or 0
+                              db_bloat_percentage.labels(table_name=f"{row['schemaname']}.{row['tablename']}").set(bloat_pct)
+                          
+                          return bloat_stats
+                  except Exception as e:
+                      logger.error(f"Error getting bloat stats: {e}")
+                      return []
+              
+              async def get_all_stats(self) -> DatabaseStats:
+                  """Get all database statistics"""
+                  try:
+                      connections = await self.get_connection_stats()
+                      table_sizes = await self.get_table_sizes()
+                      index_usage = await self.get_index_usage()
+                      slow_queries = await self.get_slow_queries()
+                      bloat_stats = await self.get_bloat_stats()
+                      
+                      return DatabaseStats(
+                          connections=connections,
+                          table_sizes=table_sizes,
+                          index_usage=index_usage,
+                          slow_queries=slow_queries,
+                          bloat_stats=bloat_stats
+                      )
+                  except Exception as e:
+                      logger.error(f"Error getting database stats: {e}")
+                      raise HTTPException(status_code=500, detail=str(e))
+              
+              async def optimize_database(self) -> Dict[str, Any]:
+                  """Perform database optimization"""
+                  try:
+                      async with self.db_pool.acquire() as conn:
+                          # Run ANALYZE on all tables
+                          await conn.execute("ANALYZE;")
+                          
+                          # Get tables that need vacuuming
+                          vacuum_query = """
+                          SELECT schemaname, tablename, n_dead_tup
+                          FROM pg_stat_user_tables
+                          WHERE n_dead_tup > 1000
+                          ORDER BY n_dead_tup DESC
+                          """
+                          tables_to_vacuum = await conn.fetch(vacuum_query)
+                          
+                          vacuumed_tables = []
+                          for table in tables_to_vacuum:
+                              table_name = f"{table['schemaname']}.{table['tablename']}"
+                              await conn.execute(f"VACUUM ANALYZE {table_name};")
+                              vacuumed_tables.append(table_name)
+                          
+                          return {
+                              "status": "completed",
+                              "analyzed": "all_tables",
+                              "vacuumed_tables": vacuumed_tables,
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  except Exception as e:
+                      logger.error(f"Error optimizing database: {e}")
+                      raise HTTPException(status_code=500, detail=str(e))
+          
+          # Initialize monitor
+          monitor = DatabaseMonitor()
+          
+          # API Endpoints
+          @app.get("/api/v1/database/stats", response_model=DatabaseStats)
+          async def get_database_stats():
+              """Get comprehensive database statistics"""
+              return await monitor.get_all_stats()
+          
+          @app.get("/api/v1/database/connections")
+          async def get_connection_stats():
+              """Get database connection statistics"""
+              return await monitor.get_connection_stats()
+          
+          @app.get("/api/v1/database/tables")
+          async def get_table_stats():
+              """Get table size and statistics"""
+              return await monitor.get_table_sizes()
+          
+          @app.get("/api/v1/database/indexes")
+          async def get_index_stats():
+              """Get index usage statistics"""
+              return await monitor.get_index_usage()
+          
+          @app.get("/api/v1/database/slow-queries")
+          async def get_slow_query_stats():
+              """Get slow query statistics"""
+              return await monitor.get_slow_queries()
+          
+          @app.get("/api/v1/database/bloat")
+          async def get_bloat_stats():
+              """Get table bloat statistics"""
+              return await monitor.get_bloat_stats()
+          
+          @app.post("/api/v1/database/optimize")
+          async def optimize_database():
+              """Trigger database optimization"""
+              return await monitor.optimize_database()
+          
+          @app.get("/health")
+          async def health_check():
+              return {"status": "healthy", "service": "database-performance-monitor"}
+          
+          @app.get("/metrics")
+          async def get_metrics():
+              """Prometheus metrics endpoint"""
+              from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+              return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+          
+          # Background monitoring task
+          async def background_monitoring():
+              """Background database monitoring task"""
+              while True:
+                  try:
+                      await asyncio.sleep(60)  # Run every minute
+                      await monitor.get_all_stats()  # This updates Prometheus metrics
+                  except Exception as e:
+                      logger.error(f"Background monitoring error: {e}")
+          
+          @app.on_event("startup")
+          async def startup_event():
+              await monitor.initialize()
+              
+              # Start Prometheus metrics server
+              start_http_server(9094)
+              
+              # Start background monitoring
+              asyncio.create_task(background_monitoring())
+              
+              logger.info("Database performance monitor started")
+          
+          @app.on_event("shutdown")
+          async def shutdown_event():
+              if monitor.db_pool:
+                  await monitor.db_pool.close()
+          
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="0.0.0.0", port=8091)
+          EOF
+          
+          # Start the service
+          cd /app && python db_monitor.py
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8091
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8091
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-performance-monitor-service
+  namespace: nexus-infrastructure
+  labels:
+    app: database-performance-monitor
+    component: performance
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8091
+    targetPort: 8091
+    protocol: TCP
+  - name: metrics
+    port: 9094
+    targetPort: 9094
+    protocol: TCP
+  selector:
+    app: database-performance-monitor
+

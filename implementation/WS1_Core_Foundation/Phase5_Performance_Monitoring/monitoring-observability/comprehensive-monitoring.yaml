@@ -1,0 +1,1017 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: comprehensive-monitoring-config
+  namespace: nexus-infrastructure
+data:
+  grafana_dashboards.json: |
+    {
+      "nexus_overview": {
+        "dashboard": {
+          "id": null,
+          "title": "Nexus Architect - System Overview",
+          "tags": ["nexus", "overview"],
+          "timezone": "browser",
+          "panels": [
+            {
+              "id": 1,
+              "title": "System Health",
+              "type": "stat",
+              "targets": [
+                {
+                  "expr": "up{job=~\"nexus.*\"}",
+                  "legendFormat": "{{job}}"
+                }
+              ],
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "steps": [
+                      {"color": "red", "value": 0},
+                      {"color": "green", "value": 1}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": 2,
+              "title": "Request Rate",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(http_requests_total[5m])",
+                  "legendFormat": "{{service}}"
+                }
+              ]
+            },
+            {
+              "id": 3,
+              "title": "Response Time",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+                  "legendFormat": "95th percentile"
+                }
+              ]
+            },
+            {
+              "id": 4,
+              "title": "Error Rate",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m])",
+                  "legendFormat": "Error Rate"
+                }
+              ]
+            }
+          ],
+          "time": {
+            "from": "now-1h",
+            "to": "now"
+          },
+          "refresh": "30s"
+        }
+      },
+      "nexus_ai_dashboard": {
+        "dashboard": {
+          "id": null,
+          "title": "Nexus Architect - AI Services",
+          "tags": ["nexus", "ai"],
+          "panels": [
+            {
+              "id": 1,
+              "title": "AI Request Volume",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(ai_requests_total[5m])",
+                  "legendFormat": "{{model}}"
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "title": "AI Response Time",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "histogram_quantile(0.95, rate(ai_request_duration_seconds_bucket[5m]))",
+                  "legendFormat": "{{model}} - 95th percentile"
+                }
+              ]
+            },
+            {
+              "id": 3,
+              "title": "Model Usage Distribution",
+              "type": "piechart",
+              "targets": [
+                {
+                  "expr": "sum by (model) (ai_model_usage_total)",
+                  "legendFormat": "{{model}}"
+                }
+              ]
+            },
+            {
+              "id": 4,
+              "title": "Safety Violations",
+              "type": "stat",
+              "targets": [
+                {
+                  "expr": "increase(ai_safety_violations_total[1h])",
+                  "legendFormat": "{{violation_type}}"
+                }
+              ]
+            },
+            {
+              "id": 5,
+              "title": "AI Cost Tracking",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "increase(ai_cost_tracking_total[1h])",
+                  "legendFormat": "{{provider}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "nexus_infrastructure": {
+        "dashboard": {
+          "id": null,
+          "title": "Nexus Architect - Infrastructure",
+          "tags": ["nexus", "infrastructure"],
+          "panels": [
+            {
+              "id": 1,
+              "title": "CPU Usage",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+                  "legendFormat": "{{instance}}"
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "title": "Memory Usage",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+                  "legendFormat": "{{instance}}"
+                }
+              ]
+            },
+            {
+              "id": 3,
+              "title": "Disk Usage",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "100 - ((node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100)",
+                  "legendFormat": "{{instance}}"
+                }
+              ]
+            },
+            {
+              "id": 4,
+              "title": "Network I/O",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(node_network_receive_bytes_total[5m])",
+                  "legendFormat": "{{instance}} - RX"
+                },
+                {
+                  "expr": "rate(node_network_transmit_bytes_total[5m])",
+                  "legendFormat": "{{instance}} - TX"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  
+  alerting_rules.yml: |
+    groups:
+    - name: nexus_alerts
+      rules:
+      # System Health Alerts
+      - alert: ServiceDown
+        expr: up{job=~"nexus.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nexus service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} has been down for more than 1 minute"
+      
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for service {{ $labels.service }}"
+      
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s for service {{ $labels.service }}"
+      
+      # AI Service Alerts
+      - alert: AIServiceDown
+        expr: up{job=~".*ai.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI service {{ $labels.job }} is down"
+          description: "AI service {{ $labels.job }} has been down for more than 2 minutes"
+      
+      - alert: HighAISafetyViolations
+        expr: increase(ai_safety_violations_total[1h]) > 10
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High number of AI safety violations"
+          description: "{{ $value }} safety violations detected in the last hour"
+      
+      - alert: AIModelHighLatency
+        expr: histogram_quantile(0.95, rate(ai_request_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI model high latency"
+          description: "AI model {{ $labels.model }} has 95th percentile latency of {{ $value }}s"
+      
+      - alert: AICostThreshold
+        expr: increase(ai_cost_tracking_total[1d]) > 1000
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI cost threshold exceeded"
+          description: "Daily AI costs have exceeded $1000: ${{ $value }}"
+      
+      # Infrastructure Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+      
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+      
+      - alert: DiskSpaceLow
+        expr: 100 - ((node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}"
+      
+      # Database Alerts
+      - alert: DatabaseConnectionsHigh
+        expr: db_connections_active > 150
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database connections"
+          description: "Database has {{ $value }} active connections"
+      
+      - alert: DatabaseSlowQueries
+        expr: increase(db_query_duration_seconds_count{quantile="0.95"}[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of slow database queries"
+          description: "{{ $value }} slow queries detected in the last 5 minutes"
+      
+      - alert: DatabaseTableBloat
+        expr: db_table_bloat_percentage > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database table bloat"
+          description: "Table {{ $labels.table_name }} has {{ $value }}% bloat"
+      
+      # Cache Alerts
+      - alert: CacheLowHitRatio
+        expr: cache_hits_total / (cache_hits_total + cache_misses_total) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit ratio"
+          description: "Cache {{ $labels.layer }} has hit ratio of {{ $value | humanizePercentage }}"
+      
+      - alert: CacheHighMemoryUsage
+        expr: cache_memory_usage_bytes / (1024*1024*1024) > 7  # 7GB
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High cache memory usage"
+          description: "Cache {{ $labels.layer }} is using {{ $value }}GB of memory"
+      
+      # Security Alerts
+      - alert: SecurityViolation
+        expr: increase(security_violations_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Security violation detected"
+          description: "{{ $value }} security violations detected in the last 5 minutes"
+      
+      - alert: AuthenticationFailures
+        expr: increase(authentication_failures_total[5m]) > 10
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failures"
+          description: "{{ $value }} authentication failures in the last 5 minutes"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-aggregator
+  namespace: nexus-infrastructure
+  labels:
+    app: monitoring-aggregator
+    component: monitoring
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: monitoring-aggregator
+  template:
+    metadata:
+      labels:
+        app: monitoring-aggregator
+        component: monitoring
+    spec:
+      serviceAccountName: nexus-infrastructure
+      containers:
+      - name: aggregator
+        image: python:3.11-slim
+        ports:
+        - name: http
+          containerPort: 8095
+        - name: metrics
+          containerPort: 9095
+        env:
+        - name: PROMETHEUS_URL
+          value: "http://prometheus.nexus-infrastructure:9090"
+        - name: GRAFANA_URL
+          value: "http://grafana.nexus-infrastructure:3000"
+        - name: ALERT_WEBHOOK_URL
+          value: "http://alertmanager.nexus-infrastructure:9093"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install required packages
+          pip install fastapi uvicorn requests prometheus-client \
+                     asyncio aiohttp pandas numpy pyyaml \
+                     python-json-logger schedule
+          
+          # Create monitoring aggregator service
+          cat > /app/monitoring_aggregator.py <<'EOF'
+          """
+          Monitoring Aggregator Service
+          Comprehensive monitoring, alerting, and observability
+          """
+          
+          import os
+          import json
+          import yaml
+          import logging
+          import asyncio
+          import time
+          import schedule
+          from datetime import datetime, timedelta
+          from typing import Dict, List, Any, Optional
+          from enum import Enum
+          
+          from fastapi import FastAPI, HTTPException, BackgroundTasks
+          from pydantic import BaseModel, Field
+          import requests
+          import aiohttp
+          import pandas as pd
+          import numpy as np
+          from prometheus_client import Counter, Histogram, Gauge, start_http_server
+          
+          # Configure logging
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          # Prometheus metrics
+          monitoring_checks = Counter('monitoring_checks_total', 'Monitoring checks performed', ['check_type', 'status'])
+          alert_notifications = Counter('alert_notifications_total', 'Alert notifications sent', ['severity', 'channel'])
+          system_health_score = Gauge('system_health_score', 'Overall system health score')
+          performance_score = Gauge('performance_score', 'Overall performance score')
+          
+          app = FastAPI(
+              title="Monitoring Aggregator",
+              description="Comprehensive monitoring and observability aggregation",
+              version="1.0.0"
+          )
+          
+          class AlertSeverity(str, Enum):
+              INFO = "info"
+              WARNING = "warning"
+              CRITICAL = "critical"
+          
+          class HealthStatus(str, Enum):
+              HEALTHY = "healthy"
+              DEGRADED = "degraded"
+              UNHEALTHY = "unhealthy"
+          
+          class SystemMetrics(BaseModel):
+              timestamp: datetime
+              health_score: float
+              performance_score: float
+              availability: float
+              error_rate: float
+              response_time_p95: float
+              active_alerts: int
+              services_up: int
+              services_total: int
+          
+          class AlertRule(BaseModel):
+              name: str
+              query: str
+              threshold: float
+              severity: AlertSeverity
+              duration: str
+              description: str
+          
+          class MonitoringAggregator:
+              def __init__(self):
+                  self.prometheus_url = os.getenv("PROMETHEUS_URL", "http://prometheus.nexus-infrastructure:9090")
+                  self.grafana_url = os.getenv("GRAFANA_URL", "http://grafana.nexus-infrastructure:3000")
+                  self.alert_webhook_url = os.getenv("ALERT_WEBHOOK_URL", "http://alertmanager.nexus-infrastructure:9093")
+                  self.health_checks = {}
+                  self.performance_metrics = {}
+                  self.alert_history = []
+              
+              async def query_prometheus(self, query: str) -> Dict[str, Any]:
+                  """Query Prometheus for metrics"""
+                  try:
+                      async with aiohttp.ClientSession() as session:
+                          url = f"{self.prometheus_url}/api/v1/query"
+                          params = {"query": query}
+                          
+                          async with session.get(url, params=params) as response:
+                              if response.status == 200:
+                                  data = await response.json()
+                                  return data.get("data", {})
+                              else:
+                                  logger.error(f"Prometheus query failed: {response.status}")
+                                  return {}
+                  except Exception as e:
+                      logger.error(f"Error querying Prometheus: {e}")
+                      return {}
+              
+              async def get_system_health(self) -> Dict[str, Any]:
+                  """Calculate overall system health"""
+                  try:
+                      # Query service availability
+                      services_up_query = 'count(up{job=~"nexus.*"} == 1)'
+                      services_total_query = 'count(up{job=~"nexus.*"})'
+                      
+                      services_up_result = await self.query_prometheus(services_up_query)
+                      services_total_result = await self.query_prometheus(services_total_query)
+                      
+                      services_up = 0
+                      services_total = 0
+                      
+                      if services_up_result.get("result"):
+                          services_up = float(services_up_result["result"][0]["value"][1])
+                      
+                      if services_total_result.get("result"):
+                          services_total = float(services_total_result["result"][0]["value"][1])
+                      
+                      availability = (services_up / services_total * 100) if services_total > 0 else 0
+                      
+                      # Query error rate
+                      error_rate_query = 'sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))'
+                      error_rate_result = await self.query_prometheus(error_rate_query)
+                      
+                      error_rate = 0
+                      if error_rate_result.get("result"):
+                          error_rate = float(error_rate_result["result"][0]["value"][1]) * 100
+                      
+                      # Query response time
+                      response_time_query = 'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))'
+                      response_time_result = await self.query_prometheus(response_time_query)
+                      
+                      response_time_p95 = 0
+                      if response_time_result.get("result"):
+                          response_time_p95 = float(response_time_result["result"][0]["value"][1])
+                      
+                      # Query active alerts
+                      alerts_query = 'count(ALERTS{alertstate="firing"})'
+                      alerts_result = await self.query_prometheus(alerts_query)
+                      
+                      active_alerts = 0
+                      if alerts_result.get("result"):
+                          active_alerts = float(alerts_result["result"][0]["value"][1])
+                      
+                      # Calculate health score
+                      health_score = self.calculate_health_score(
+                          availability, error_rate, response_time_p95, active_alerts
+                      )
+                      
+                      # Calculate performance score
+                      performance_score = self.calculate_performance_score(
+                          error_rate, response_time_p95
+                      )
+                      
+                      # Update Prometheus metrics
+                      system_health_score.set(health_score)
+                      performance_score.set(performance_score)
+                      
+                      return {
+                          "timestamp": datetime.utcnow().isoformat(),
+                          "health_score": health_score,
+                          "performance_score": performance_score,
+                          "availability": availability,
+                          "error_rate": error_rate,
+                          "response_time_p95": response_time_p95,
+                          "active_alerts": int(active_alerts),
+                          "services_up": int(services_up),
+                          "services_total": int(services_total),
+                          "status": self.get_health_status(health_score)
+                      }
+                  except Exception as e:
+                      logger.error(f"Error calculating system health: {e}")
+                      return {
+                          "timestamp": datetime.utcnow().isoformat(),
+                          "health_score": 0,
+                          "performance_score": 0,
+                          "status": "unhealthy",
+                          "error": str(e)
+                      }
+              
+              def calculate_health_score(self, availability: float, error_rate: float, 
+                                       response_time: float, active_alerts: int) -> float:
+                  """Calculate overall health score (0-100)"""
+                  # Availability component (40% weight)
+                  availability_score = availability * 0.4
+                  
+                  # Error rate component (30% weight) - inverted
+                  error_score = max(0, (100 - error_rate * 20)) * 0.3
+                  
+                  # Response time component (20% weight) - inverted
+                  response_score = max(0, (100 - min(response_time * 20, 100))) * 0.2
+                  
+                  # Alert component (10% weight) - inverted
+                  alert_score = max(0, (100 - min(active_alerts * 10, 100))) * 0.1
+                  
+                  total_score = availability_score + error_score + response_score + alert_score
+                  return round(total_score, 2)
+              
+              def calculate_performance_score(self, error_rate: float, response_time: float) -> float:
+                  """Calculate performance score (0-100)"""
+                  # Error rate component (50% weight)
+                  error_score = max(0, (100 - error_rate * 20)) * 0.5
+                  
+                  # Response time component (50% weight)
+                  response_score = max(0, (100 - min(response_time * 20, 100))) * 0.5
+                  
+                  total_score = error_score + response_score
+                  return round(total_score, 2)
+              
+              def get_health_status(self, health_score: float) -> HealthStatus:
+                  """Determine health status based on score"""
+                  if health_score >= 90:
+                      return HealthStatus.HEALTHY
+                  elif health_score >= 70:
+                      return HealthStatus.DEGRADED
+                  else:
+                      return HealthStatus.UNHEALTHY
+              
+              async def get_service_metrics(self) -> Dict[str, Any]:
+                  """Get detailed service metrics"""
+                  try:
+                      metrics = {}
+                      
+                      # AI Services metrics
+                      ai_requests_query = 'sum(rate(ai_requests_total[5m])) by (model)'
+                      ai_requests_result = await self.query_prometheus(ai_requests_query)
+                      
+                      ai_metrics = {}
+                      if ai_requests_result.get("result"):
+                          for result in ai_requests_result["result"]:
+                              model = result["metric"].get("model", "unknown")
+                              rate = float(result["value"][1])
+                              ai_metrics[model] = {"request_rate": rate}
+                      
+                      metrics["ai_services"] = ai_metrics
+                      
+                      # Database metrics
+                      db_connections_query = 'db_connections_active'
+                      db_connections_result = await self.query_prometheus(db_connections_query)
+                      
+                      db_metrics = {}
+                      if db_connections_result.get("result"):
+                          db_metrics["active_connections"] = float(db_connections_result["result"][0]["value"][1])
+                      
+                      metrics["database"] = db_metrics
+                      
+                      # Cache metrics
+                      cache_hit_ratio_query = 'cache_hits_total / (cache_hits_total + cache_misses_total)'
+                      cache_hit_ratio_result = await self.query_prometheus(cache_hit_ratio_query)
+                      
+                      cache_metrics = {}
+                      if cache_hit_ratio_result.get("result"):
+                          for result in cache_hit_ratio_result["result"]:
+                              layer = result["metric"].get("layer", "unknown")
+                              ratio = float(result["value"][1])
+                              cache_metrics[layer] = {"hit_ratio": ratio}
+                      
+                      metrics["cache"] = cache_metrics
+                      
+                      return metrics
+                  except Exception as e:
+                      logger.error(f"Error getting service metrics: {e}")
+                      return {}
+              
+              async def check_alert_rules(self) -> List[Dict[str, Any]]:
+                  """Check custom alert rules"""
+                  try:
+                      active_alerts = []
+                      
+                      # Define custom alert rules
+                      alert_rules = [
+                          {
+                              "name": "HighAILatency",
+                              "query": "histogram_quantile(0.95, rate(ai_request_duration_seconds_bucket[5m]))",
+                              "threshold": 5.0,
+                              "severity": "warning",
+                              "description": "AI response time is too high"
+                          },
+                          {
+                              "name": "LowCacheHitRatio",
+                              "query": "cache_hits_total / (cache_hits_total + cache_misses_total)",
+                              "threshold": 0.8,
+                              "severity": "warning",
+                              "description": "Cache hit ratio is below threshold"
+                          },
+                          {
+                              "name": "HighDatabaseConnections",
+                              "query": "db_connections_active",
+                              "threshold": 150,
+                              "severity": "warning",
+                              "description": "Database connection count is high"
+                          }
+                      ]
+                      
+                      for rule in alert_rules:
+                          result = await self.query_prometheus(rule["query"])
+                          
+                          if result.get("result"):
+                              for metric_result in result["result"]:
+                                  value = float(metric_result["value"][1])
+                                  
+                                  # Check threshold based on rule type
+                                  is_firing = False
+                                  if rule["name"] in ["HighAILatency", "HighDatabaseConnections"]:
+                                      is_firing = value > rule["threshold"]
+                                  elif rule["name"] == "LowCacheHitRatio":
+                                      is_firing = value < rule["threshold"]
+                                  
+                                  if is_firing:
+                                      alert = {
+                                          "name": rule["name"],
+                                          "severity": rule["severity"],
+                                          "description": rule["description"],
+                                          "value": value,
+                                          "threshold": rule["threshold"],
+                                          "timestamp": datetime.utcnow().isoformat(),
+                                          "labels": metric_result.get("metric", {})
+                                      }
+                                      active_alerts.append(alert)
+                      
+                      return active_alerts
+                  except Exception as e:
+                      logger.error(f"Error checking alert rules: {e}")
+                      return []
+              
+              async def send_alert_notification(self, alert: Dict[str, Any]):
+                  """Send alert notification"""
+                  try:
+                      # Log alert
+                      logger.warning(f"ALERT: {alert['name']} - {alert['description']}")
+                      
+                      # Update metrics
+                      alert_notifications.labels(
+                          severity=alert["severity"],
+                          channel="log"
+                      ).inc()
+                      
+                      # Store in alert history
+                      self.alert_history.append(alert)
+                      
+                      # Keep only last 100 alerts
+                      if len(self.alert_history) > 100:
+                          self.alert_history = self.alert_history[-100:]
+                      
+                      # In production, send to external alerting systems
+                      # await self.send_to_slack(alert)
+                      # await self.send_to_email(alert)
+                      # await self.send_to_pagerduty(alert)
+                      
+                  except Exception as e:
+                      logger.error(f"Error sending alert notification: {e}")
+              
+              async def generate_health_report(self) -> Dict[str, Any]:
+                  """Generate comprehensive health report"""
+                  try:
+                      system_health = await self.get_system_health()
+                      service_metrics = await self.get_service_metrics()
+                      active_alerts = await self.check_alert_rules()
+                      
+                      # Send notifications for new alerts
+                      for alert in active_alerts:
+                          await self.send_alert_notification(alert)
+                      
+                      report = {
+                          "report_timestamp": datetime.utcnow().isoformat(),
+                          "system_health": system_health,
+                          "service_metrics": service_metrics,
+                          "active_alerts": active_alerts,
+                          "alert_history": self.alert_history[-10:],  # Last 10 alerts
+                          "recommendations": self.generate_recommendations(system_health, service_metrics)
+                      }
+                      
+                      return report
+                  except Exception as e:
+                      logger.error(f"Error generating health report: {e}")
+                      return {
+                          "report_timestamp": datetime.utcnow().isoformat(),
+                          "error": str(e)
+                      }
+              
+              def generate_recommendations(self, system_health: Dict[str, Any], 
+                                         service_metrics: Dict[str, Any]) -> List[str]:
+                  """Generate optimization recommendations"""
+                  recommendations = []
+                  
+                  # Health-based recommendations
+                  health_score = system_health.get("health_score", 0)
+                  if health_score < 70:
+                      recommendations.append("System health is degraded. Review active alerts and service status.")
+                  
+                  error_rate = system_health.get("error_rate", 0)
+                  if error_rate > 5:
+                      recommendations.append(f"High error rate ({error_rate:.2f}%). Investigate failing requests.")
+                  
+                  response_time = system_health.get("response_time_p95", 0)
+                  if response_time > 2:
+                      recommendations.append(f"High response time ({response_time:.2f}s). Consider performance optimization.")
+                  
+                  # Service-specific recommendations
+                  cache_metrics = service_metrics.get("cache", {})
+                  for layer, metrics in cache_metrics.items():
+                      hit_ratio = metrics.get("hit_ratio", 1)
+                      if hit_ratio < 0.8:
+                          recommendations.append(f"Low cache hit ratio for {layer} ({hit_ratio:.2%}). Review caching strategy.")
+                  
+                  db_metrics = service_metrics.get("database", {})
+                  connections = db_metrics.get("active_connections", 0)
+                  if connections > 150:
+                      recommendations.append(f"High database connections ({connections}). Consider connection pooling optimization.")
+                  
+                  return recommendations
+          
+          # Initialize aggregator
+          aggregator = MonitoringAggregator()
+          
+          # API Endpoints
+          @app.get("/api/v1/monitoring/health")
+          async def get_system_health():
+              """Get overall system health"""
+              return await aggregator.get_system_health()
+          
+          @app.get("/api/v1/monitoring/metrics")
+          async def get_service_metrics():
+              """Get detailed service metrics"""
+              return await aggregator.get_service_metrics()
+          
+          @app.get("/api/v1/monitoring/alerts")
+          async def get_active_alerts():
+              """Get active alerts"""
+              return await aggregator.check_alert_rules()
+          
+          @app.get("/api/v1/monitoring/report")
+          async def get_health_report():
+              """Get comprehensive health report"""
+              return await aggregator.generate_health_report()
+          
+          @app.get("/api/v1/monitoring/history")
+          async def get_alert_history():
+              """Get alert history"""
+              return {"alerts": aggregator.alert_history}
+          
+          @app.post("/api/v1/monitoring/test-alert")
+          async def test_alert_notification():
+              """Test alert notification system"""
+              test_alert = {
+                  "name": "TestAlert",
+                  "severity": "info",
+                  "description": "Test alert notification",
+                  "value": 1.0,
+                  "threshold": 0.5,
+                  "timestamp": datetime.utcnow().isoformat(),
+                  "labels": {"test": "true"}
+              }
+              
+              await aggregator.send_alert_notification(test_alert)
+              return {"status": "test_alert_sent", "alert": test_alert}
+          
+          @app.get("/health")
+          async def health_check():
+              return {"status": "healthy", "service": "monitoring-aggregator"}
+          
+          @app.get("/metrics")
+          async def get_metrics():
+              """Prometheus metrics endpoint"""
+              from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+              return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+          
+          # Background monitoring task
+          async def background_monitoring():
+              """Background monitoring and alerting task"""
+              while True:
+                  try:
+                      await asyncio.sleep(60)  # Run every minute
+                      
+                      # Generate health report (includes alert checking)
+                      report = await aggregator.generate_health_report()
+                      
+                      # Update monitoring check metrics
+                      monitoring_checks.labels(check_type="health", status="success").inc()
+                      
+                  except Exception as e:
+                      logger.error(f"Background monitoring error: {e}")
+                      monitoring_checks.labels(check_type="health", status="error").inc()
+          
+          @app.on_event("startup")
+          async def startup_event():
+              # Start Prometheus metrics server
+              start_http_server(9095)
+              
+              # Start background monitoring
+              asyncio.create_task(background_monitoring())
+              
+              logger.info("Monitoring aggregator service started")
+          
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="0.0.0.0", port=8095)
+          EOF
+          
+          # Start the service
+          cd /app && python monitoring_aggregator.py
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8095
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8095
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: comprehensive-monitoring-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitoring-aggregator-service
+  namespace: nexus-infrastructure
+  labels:
+    app: monitoring-aggregator
+    component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8095
+    targetPort: 8095
+    protocol: TCP
+  - name: metrics
+    port: 9095
+    targetPort: 9095
+    protocol: TCP
+  selector:
+    app: monitoring-aggregator
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nexus-comprehensive-monitoring
+  namespace: nexus-infrastructure
+  labels:
+    app: nexus-monitoring
+spec:
+  selector:
+    matchLabels:
+      component: performance
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nexus-performance-rules
+  namespace: nexus-infrastructure
+  labels:
+    app: nexus-monitoring
+spec:
+  groups:
+  - name: nexus.performance
+    rules:
+    - alert: NexusHighLatency
+      expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High latency detected in Nexus services"
+        description: "95th percentile latency is {{ $value }}s"
+    
+    - alert: NexusHighErrorRate
+      expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate in Nexus services"
+        description: "Error rate is {{ $value | humanizePercentage }}"
+    
+    - alert: NexusLowAvailability
+      expr: (count(up{job=~"nexus.*"} == 1) / count(up{job=~"nexus.*"})) < 0.95
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Low service availability"
+        description: "Only {{ $value | humanizePercentage }} of services are available"
+
