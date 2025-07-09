@@ -1,0 +1,181 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-api
+  labels:
+    name: nexus-api
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: api
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nexus-api-secrets
+  namespace: nexus-api
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual secrets
+  DATABASE_URL: cG9zdGdyZXNxbDovL25leHVzOk5leHVzREIyMDI0QHBvc3RncmVzcWwtcHJpbWFyeS5uZXh1cy1pbmZyYXN0cnVjdHVyZTo1NDMyL25leHVz
+  KEYCLOAK_CLIENT_SECRET: bmV4dXMtYXBpLXNlY3JldC0yMDI0
+  OPENAI_API_KEY: ""  # Add your OpenAI API key here
+  ANTHROPIC_API_KEY: ""  # Add your Anthropic API key here
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-api-config
+  namespace: nexus-api
+data:
+  KEYCLOAK_URL: "http://keycloak.nexus-auth:8080"
+  KEYCLOAK_REALM: "nexus-architect"
+  KEYCLOAK_CLIENT_ID: "nexus-api"
+  REDIS_URL: "redis://redis-cluster.nexus-infrastructure:6379"
+  LOG_LEVEL: "INFO"
+  WORKERS: "4"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-api
+  namespace: nexus-api
+  labels:
+    app: nexus-api
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nexus-api
+  template:
+    metadata:
+      labels:
+        app: nexus-api
+    spec:
+      containers:
+      - name: nexus-api
+        image: nexus-architect/api:latest
+        ports:
+        - name: http
+          containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: nexus-api-secrets
+              key: DATABASE_URL
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: nexus-api-secrets
+              key: KEYCLOAK_CLIENT_SECRET
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nexus-api-secrets
+              key: OPENAI_API_KEY
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nexus-api-secrets
+              key: ANTHROPIC_API_KEY
+        envFrom:
+        - configMapRef:
+            name: nexus-api-config
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: app-logs
+          mountPath: /app/logs
+      volumes:
+      - name: app-logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-api
+  namespace: nexus-api
+  labels:
+    app: nexus-api
+spec:
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  selector:
+    app: nexus-api
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexus-api-ingress
+  namespace: nexus-api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.nexus-architect.local"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+spec:
+  tls:
+  - hosts:
+    - api.nexus-architect.local
+    secretName: nexus-api-tls
+  rules:
+  - host: api.nexus-architect.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nexus-api
+            port:
+              number: 8000
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nexus-api-db-init
+  namespace: nexus-api
+spec:
+  template:
+    spec:
+      containers:
+      - name: db-init
+        image: postgres:15
+        env:
+        - name: PGPASSWORD
+          value: "PostgresAdmin2024"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          psql -h postgresql-primary.nexus-infrastructure -U postgres -d postgres -c "
+          CREATE DATABASE nexus;
+          CREATE USER nexus WITH PASSWORD 'NexusDB2024';
+          GRANT ALL PRIVILEGES ON DATABASE nexus TO nexus;
+          ALTER DATABASE nexus OWNER TO nexus;
+          "
+      restartPolicy: OnFailure
+  backoffLimit: 3
+

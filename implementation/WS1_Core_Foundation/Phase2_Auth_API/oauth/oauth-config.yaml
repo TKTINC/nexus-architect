@@ -1,0 +1,350 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth-config
+  namespace: nexus-auth
+data:
+  realm-config.json: |
+    {
+      "realm": "nexus-architect",
+      "enabled": true,
+      "displayName": "Nexus Architect",
+      "displayNameHtml": "<div class=\"kc-logo-text\"><span>Nexus Architect</span></div>",
+      "accessTokenLifespan": 3600,
+      "accessTokenLifespanForImplicitFlow": 900,
+      "ssoSessionIdleTimeout": 1800,
+      "ssoSessionMaxLifespan": 36000,
+      "offlineSessionIdleTimeout": 2592000,
+      "accessCodeLifespan": 60,
+      "accessCodeLifespanUserAction": 300,
+      "accessCodeLifespanLogin": 1800,
+      "actionTokenGeneratedByAdminLifespan": 43200,
+      "actionTokenGeneratedByUserLifespan": 300,
+      "oauth2DeviceCodeLifespan": 600,
+      "oauth2DevicePollingInterval": 5,
+      "enabled": true,
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "registrationEmailAsUsername": false,
+      "rememberMe": true,
+      "verifyEmail": true,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "maxFailureWaitSeconds": 900,
+      "minimumQuickLoginWaitSeconds": 60,
+      "waitIncrementSeconds": 60,
+      "quickLoginCheckMilliSeconds": 1000,
+      "maxDeltaTimeSeconds": 43200,
+      "failureFactor": 30,
+      "roles": {
+        "realm": [
+          {
+            "name": "admin",
+            "description": "System Administrator"
+          },
+          {
+            "name": "architect",
+            "description": "Senior Architect"
+          },
+          {
+            "name": "developer",
+            "description": "Software Developer"
+          },
+          {
+            "name": "project_manager",
+            "description": "Project Manager"
+          },
+          {
+            "name": "executive",
+            "description": "Executive User"
+          },
+          {
+            "name": "viewer",
+            "description": "Read-only User"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "Administrators",
+          "path": "/Administrators",
+          "realmRoles": ["admin"]
+        },
+        {
+          "name": "Architects",
+          "path": "/Architects", 
+          "realmRoles": ["architect"]
+        },
+        {
+          "name": "Developers",
+          "path": "/Developers",
+          "realmRoles": ["developer"]
+        },
+        {
+          "name": "Project Managers",
+          "path": "/Project Managers",
+          "realmRoles": ["project_manager"]
+        },
+        {
+          "name": "Executives",
+          "path": "/Executives",
+          "realmRoles": ["executive"]
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "nexus-web-app",
+          "name": "Nexus Architect Web Application",
+          "description": "Main web application for Nexus Architect",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "nexus-web-secret-2024",
+          "redirectUris": [
+            "https://app.nexus-architect.local/*",
+            "http://localhost:3000/*",
+            "http://localhost:8080/*"
+          ],
+          "webOrigins": [
+            "https://app.nexus-architect.local",
+            "http://localhost:3000",
+            "http://localhost:8080"
+          ],
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "bearerOnly": false,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": true,
+          "serviceAccountsEnabled": true,
+          "authorizationServicesEnabled": true,
+          "fullScopeAllowed": false,
+          "defaultClientScopes": [
+            "web-origins",
+            "profile",
+            "roles",
+            "email"
+          ],
+          "optionalClientScopes": [
+            "address",
+            "phone",
+            "offline_access",
+            "microprofile-jwt"
+          ]
+        },
+        {
+          "clientId": "nexus-api",
+          "name": "Nexus Architect API",
+          "description": "Backend API services for Nexus Architect",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "nexus-api-secret-2024",
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "bearerOnly": true,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true,
+          "authorizationServicesEnabled": true
+        },
+        {
+          "clientId": "nexus-mobile",
+          "name": "Nexus Architect Mobile App",
+          "description": "Mobile application for Nexus Architect",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "bearerOnly": false,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            "nexusarchitect://auth/callback",
+            "http://localhost:19006/*"
+          ]
+        }
+      ],
+      "clientScopes": [
+        {
+          "name": "nexus-read",
+          "description": "Read access to Nexus Architect resources",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "nexus-write", 
+          "description": "Write access to Nexus Architect resources",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        },
+        {
+          "name": "nexus-admin",
+          "description": "Administrative access to Nexus Architect",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true"
+          }
+        }
+      ],
+      "protocolMappers": [
+        {
+          "name": "nexus-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "nexus-groups",
+          "protocol": "openid-connect", 
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ],
+      "authenticationFlows": [
+        {
+          "alias": "nexus-browser-flow",
+          "description": "Browser based authentication with MFA",
+          "providerId": "basic-flow",
+          "topLevel": true,
+          "builtIn": false,
+          "authenticationExecutions": [
+            {
+              "authenticator": "auth-cookie",
+              "requirement": "ALTERNATIVE",
+              "priority": 10,
+              "userSetupAllowed": false,
+              "autheticatorFlow": false
+            },
+            {
+              "authenticator": "auth-spnego",
+              "requirement": "DISABLED",
+              "priority": 20,
+              "userSetupAllowed": false,
+              "autheticatorFlow": false
+            },
+            {
+              "authenticator": "identity-provider-redirector",
+              "requirement": "ALTERNATIVE",
+              "priority": 25,
+              "userSetupAllowed": false,
+              "autheticatorFlow": false
+            },
+            {
+              "flowAlias": "nexus-forms",
+              "requirement": "ALTERNATIVE",
+              "priority": 30,
+              "userSetupAllowed": false,
+              "autheticatorFlow": true
+            }
+          ]
+        }
+      ],
+      "requiredActions": [
+        {
+          "alias": "CONFIGURE_TOTP",
+          "name": "Configure OTP",
+          "providerId": "CONFIGURE_TOTP",
+          "enabled": true,
+          "defaultAction": true,
+          "priority": 10,
+          "config": {}
+        },
+        {
+          "alias": "UPDATE_PASSWORD",
+          "name": "Update Password",
+          "providerId": "UPDATE_PASSWORD", 
+          "enabled": true,
+          "defaultAction": false,
+          "priority": 30,
+          "config": {}
+        },
+        {
+          "alias": "UPDATE_PROFILE",
+          "name": "Update Profile",
+          "providerId": "UPDATE_PROFILE",
+          "enabled": true,
+          "defaultAction": false,
+          "priority": 40,
+          "config": {}
+        },
+        {
+          "alias": "VERIFY_EMAIL",
+          "name": "Verify Email",
+          "providerId": "VERIFY_EMAIL",
+          "enabled": true,
+          "defaultAction": false,
+          "priority": 50,
+          "config": {}
+        }
+      ]
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-realm-setup
+  namespace: nexus-auth
+spec:
+  template:
+    spec:
+      containers:
+      - name: keycloak-setup
+        image: quay.io/keycloak/keycloak:23.0
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "admin"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "NexusAdmin2024"
+        - name: KC_HOSTNAME
+          value: "auth.nexus-architect.local"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Wait for Keycloak to be ready
+          until curl -f http://keycloak:8080/health/ready; do
+            echo "Waiting for Keycloak to be ready..."
+            sleep 10
+          done
+          
+          # Import realm configuration
+          /opt/keycloak/bin/kc.sh import --file /tmp/realm-config.json --override true
+          
+          echo "Realm configuration imported successfully"
+        volumeMounts:
+        - name: realm-config
+          mountPath: /tmp/realm-config.json
+          subPath: realm-config.json
+      volumes:
+      - name: realm-config
+        configMap:
+          name: oauth-config
+      restartPolicy: OnFailure
+  backoffLimit: 3
+

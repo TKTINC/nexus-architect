@@ -1,0 +1,200 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-auth
+  labels:
+    name: nexus-auth
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: authentication
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-secrets
+  namespace: nexus-auth
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual secrets
+  KEYCLOAK_ADMIN: YWRtaW4=  # admin
+  KEYCLOAK_ADMIN_PASSWORD: TmV4dXNBZG1pbjIwMjQ=  # NexusAdmin2024
+  DB_PASSWORD: S2V5Y2xvYWtEQjIwMjQ=  # KeycloakDB2024
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-config
+  namespace: nexus-auth
+data:
+  KC_DB: postgres
+  KC_DB_URL: jdbc:postgresql://postgresql-primary.nexus-infrastructure:5432/keycloak
+  KC_DB_USERNAME: keycloak
+  KC_HOSTNAME_STRICT: "false"
+  KC_HOSTNAME_STRICT_HTTPS: "false"
+  KC_HTTP_ENABLED: "true"
+  KC_PROXY: edge
+  KC_HEALTH_ENABLED: "true"
+  KC_METRICS_ENABLED: "true"
+  KEYCLOAK_LOGLEVEL: INFO
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: nexus-auth
+  labels:
+    app: keycloak
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: authentication
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:23.0
+        args:
+        - start
+        - --optimized
+        env:
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-secrets
+              key: KEYCLOAK_ADMIN
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-secrets
+              key: KEYCLOAK_ADMIN_PASSWORD
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-secrets
+              key: DB_PASSWORD
+        envFrom:
+        - configMapRef:
+            name: keycloak-config
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: https
+          containerPort: 8443
+        readinessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: keycloak-data
+          mountPath: /opt/keycloak/data
+      volumes:
+      - name: keycloak-data
+        persistentVolumeClaim:
+          claimName: keycloak-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-data-pvc
+  namespace: nexus-auth
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: nexus-auth
+  labels:
+    app: keycloak
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: https
+    port: 8443
+    targetPort: 8443
+  selector:
+    app: keycloak
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-ingress
+  namespace: nexus-auth
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+spec:
+  tls:
+  - hosts:
+    - auth.nexus-architect.local
+    secretName: keycloak-tls
+  rules:
+  - host: auth.nexus-architect.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-db-init
+  namespace: nexus-auth
+spec:
+  template:
+    spec:
+      containers:
+      - name: postgres-init
+        image: postgres:15
+        env:
+        - name: PGPASSWORD
+          value: "PostgresAdmin2024"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          psql -h postgresql-primary.nexus-infrastructure -U postgres -d postgres -c "
+          CREATE DATABASE keycloak;
+          CREATE USER keycloak WITH PASSWORD 'KeycloakDB2024';
+          GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+          ALTER DATABASE keycloak OWNER TO keycloak;
+          "
+      restartPolicy: OnFailure
+  backoffLimit: 3
+
