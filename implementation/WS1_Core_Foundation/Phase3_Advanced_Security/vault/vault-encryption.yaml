@@ -1,0 +1,531 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-encryption-config
+  namespace: nexus-infrastructure
+data:
+  encryption-policy.hcl: |
+    # Nexus Architect Encryption Policies
+    
+    # Database encryption policy
+    path "nexus/data/database/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+      required_parameters = ["encryption_key_id"]
+    }
+    
+    # API secrets encryption policy
+    path "nexus/data/api/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+      required_parameters = ["encryption_key_id"]
+    }
+    
+    # AI service keys encryption policy
+    path "nexus/data/ai/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+      required_parameters = ["encryption_key_id"]
+    }
+    
+    # User data encryption policy
+    path "nexus/data/users/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+      required_parameters = ["encryption_key_id", "data_classification"]
+    }
+    
+    # Compliance data encryption policy
+    path "nexus/data/compliance/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+      required_parameters = ["encryption_key_id", "compliance_level", "retention_period"]
+    }
+    
+    # Audit log encryption policy
+    path "nexus/data/audit/*" {
+      capabilities = ["create", "read", "list"]
+      required_parameters = ["encryption_key_id", "immutable"]
+    }
+  
+  key-rotation-policy.hcl: |
+    # Key Rotation Policies
+    
+    # Database encryption keys - rotate every 90 days
+    path "nexus/keys/database" {
+      type = "aes256-gcm96"
+      rotation_period = "2160h"  # 90 days
+      min_decryption_version = 1
+      min_encryption_version = 0
+      deletion_allowed = false
+      exportable = false
+      allow_plaintext_backup = false
+    }
+    
+    # API encryption keys - rotate every 30 days
+    path "nexus/keys/api" {
+      type = "aes256-gcm96"
+      rotation_period = "720h"   # 30 days
+      min_decryption_version = 1
+      min_encryption_version = 0
+      deletion_allowed = false
+      exportable = false
+      allow_plaintext_backup = false
+    }
+    
+    # User data encryption keys - rotate every 180 days
+    path "nexus/keys/users" {
+      type = "aes256-gcm96"
+      rotation_period = "4320h"  # 180 days
+      min_decryption_version = 1
+      min_encryption_version = 0
+      deletion_allowed = false
+      exportable = false
+      allow_plaintext_backup = false
+    }
+    
+    # Compliance data encryption keys - rotate every 365 days
+    path "nexus/keys/compliance" {
+      type = "aes256-gcm96"
+      rotation_period = "8760h"  # 365 days
+      min_decryption_version = 1
+      min_encryption_version = 0
+      deletion_allowed = false
+      exportable = false
+      allow_plaintext_backup = false
+    }
+    
+    # Audit log encryption keys - rotate every 365 days, never delete
+    path "nexus/keys/audit" {
+      type = "aes256-gcm96"
+      rotation_period = "8760h"  # 365 days
+      min_decryption_version = 1
+      min_encryption_version = 0
+      deletion_allowed = false
+      exportable = false
+      allow_plaintext_backup = false
+    }
+  
+  transit-encryption.hcl: |
+    # Transit Encryption Configuration
+    
+    # Enable transit secrets engine
+    path "transit/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+    }
+    
+    # Database transit encryption
+    path "transit/encrypt/nexus-database" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/nexus-database" {
+      capabilities = ["update"]
+    }
+    
+    # API transit encryption
+    path "transit/encrypt/nexus-api" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/nexus-api" {
+      capabilities = ["update"]
+    }
+    
+    # User data transit encryption
+    path "transit/encrypt/nexus-users" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/nexus-users" {
+      capabilities = ["update"]
+    }
+    
+    # Compliance data transit encryption
+    path "transit/encrypt/nexus-compliance" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/nexus-compliance" {
+      capabilities = ["update"]
+    }
+    
+    # Audit log transit encryption
+    path "transit/encrypt/nexus-audit" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/nexus-audit" {
+      capabilities = ["update"]
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-encryption-setup
+  namespace: nexus-infrastructure
+spec:
+  template:
+    spec:
+      serviceAccountName: vault-auth
+      containers:
+      - name: vault-setup
+        image: vault:1.15.2
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault.nexus-infrastructure:8200"
+        - name: VAULT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: vault-keys
+              key: root-token
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Wait for Vault to be ready
+          until vault status; do
+            echo "Waiting for Vault to be ready..."
+            sleep 10
+          done
+          
+          # Enable transit secrets engine
+          vault secrets enable -path=transit transit
+          
+          # Create encryption keys
+          vault write -f transit/keys/nexus-database type=aes256-gcm96
+          vault write -f transit/keys/nexus-api type=aes256-gcm96
+          vault write -f transit/keys/nexus-users type=aes256-gcm96
+          vault write -f transit/keys/nexus-compliance type=aes256-gcm96
+          vault write -f transit/keys/nexus-audit type=aes256-gcm96
+          
+          # Configure key rotation policies
+          vault write transit/keys/nexus-database/config \
+            min_decryption_version=1 \
+            min_encryption_version=0 \
+            deletion_allowed=false \
+            exportable=false \
+            allow_plaintext_backup=false
+          
+          vault write transit/keys/nexus-api/config \
+            min_decryption_version=1 \
+            min_encryption_version=0 \
+            deletion_allowed=false \
+            exportable=false \
+            allow_plaintext_backup=false
+          
+          vault write transit/keys/nexus-users/config \
+            min_decryption_version=1 \
+            min_encryption_version=0 \
+            deletion_allowed=false \
+            exportable=false \
+            allow_plaintext_backup=false
+          
+          vault write transit/keys/nexus-compliance/config \
+            min_decryption_version=1 \
+            min_encryption_version=0 \
+            deletion_allowed=false \
+            exportable=false \
+            allow_plaintext_backup=false
+          
+          vault write transit/keys/nexus-audit/config \
+            min_decryption_version=1 \
+            min_encryption_version=0 \
+            deletion_allowed=false \
+            exportable=false \
+            allow_plaintext_backup=false
+          
+          # Enable KV v2 secrets engine for application secrets
+          vault secrets enable -path=nexus -version=2 kv
+          
+          # Create encryption policies
+          vault policy write nexus-database-encryption - <<EOF
+          path "transit/encrypt/nexus-database" {
+            capabilities = ["update"]
+          }
+          path "transit/decrypt/nexus-database" {
+            capabilities = ["update"]
+          }
+          path "nexus/data/database/*" {
+            capabilities = ["create", "read", "update", "delete", "list"]
+          }
+          EOF
+          
+          vault policy write nexus-api-encryption - <<EOF
+          path "transit/encrypt/nexus-api" {
+            capabilities = ["update"]
+          }
+          path "transit/decrypt/nexus-api" {
+            capabilities = ["update"]
+          }
+          path "nexus/data/api/*" {
+            capabilities = ["create", "read", "update", "delete", "list"]
+          }
+          EOF
+          
+          vault policy write nexus-users-encryption - <<EOF
+          path "transit/encrypt/nexus-users" {
+            capabilities = ["update"]
+          }
+          path "transit/decrypt/nexus-users" {
+            capabilities = ["update"]
+          }
+          path "nexus/data/users/*" {
+            capabilities = ["create", "read", "update", "delete", "list"]
+          }
+          EOF
+          
+          vault policy write nexus-compliance-encryption - <<EOF
+          path "transit/encrypt/nexus-compliance" {
+            capabilities = ["update"]
+          }
+          path "transit/decrypt/nexus-compliance" {
+            capabilities = ["update"]
+          }
+          path "nexus/data/compliance/*" {
+            capabilities = ["create", "read", "update", "delete", "list"]
+          }
+          EOF
+          
+          vault policy write nexus-audit-encryption - <<EOF
+          path "transit/encrypt/nexus-audit" {
+            capabilities = ["update"]
+          }
+          path "transit/decrypt/nexus-audit" {
+            capabilities = ["update"]
+          }
+          path "nexus/data/audit/*" {
+            capabilities = ["create", "read", "list"]
+          }
+          EOF
+          
+          # Enable Kubernetes auth method
+          vault auth enable kubernetes
+          
+          # Configure Kubernetes auth
+          vault write auth/kubernetes/config \
+            token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+            kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443" \
+            kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          
+          # Create roles for each service
+          vault write auth/kubernetes/role/nexus-database \
+            bound_service_account_names=nexus-database \
+            bound_service_account_namespaces=nexus-infrastructure \
+            policies=nexus-database-encryption \
+            ttl=24h
+          
+          vault write auth/kubernetes/role/nexus-api \
+            bound_service_account_names=nexus-api \
+            bound_service_account_namespaces=nexus-api \
+            policies=nexus-api-encryption \
+            ttl=24h
+          
+          vault write auth/kubernetes/role/nexus-auth \
+            bound_service_account_names=nexus-auth \
+            bound_service_account_namespaces=nexus-auth \
+            policies=nexus-users-encryption \
+            ttl=24h
+          
+          vault write auth/kubernetes/role/nexus-compliance \
+            bound_service_account_names=nexus-compliance \
+            bound_service_account_namespaces=nexus-compliance \
+            policies=nexus-compliance-encryption \
+            ttl=24h
+          
+          vault write auth/kubernetes/role/nexus-audit \
+            bound_service_account_names=nexus-audit \
+            bound_service_account_namespaces=nexus-audit \
+            policies=nexus-audit-encryption \
+            ttl=24h
+          
+          echo "Vault encryption setup completed successfully"
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-encryption-config
+      restartPolicy: OnFailure
+  backoffLimit: 3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-auth
+  namespace: nexus-infrastructure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: vault-auth
+  namespace: nexus-infrastructure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-database
+  namespace: nexus-infrastructure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-api
+  namespace: nexus-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-auth
+  namespace: nexus-auth
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-compliance
+  namespace: nexus-compliance
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-audit
+  namespace: nexus-audit
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vault-agent
+  namespace: nexus-infrastructure
+  labels:
+    app: vault-agent
+spec:
+  selector:
+    matchLabels:
+      app: vault-agent
+  template:
+    metadata:
+      labels:
+        app: vault-agent
+    spec:
+      serviceAccountName: vault-auth
+      containers:
+      - name: vault-agent
+        image: vault:1.15.2
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault.nexus-infrastructure:8200"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Create vault agent configuration
+          cat > /tmp/vault-agent.hcl <<EOF
+          pid_file = "/tmp/vault-agent.pid"
+          
+          auto_auth {
+            method "kubernetes" {
+              mount_path = "auth/kubernetes"
+              config = {
+                role = "nexus-database"
+              }
+            }
+            
+            sink "file" {
+              config = {
+                path = "/tmp/vault-token"
+              }
+            }
+          }
+          
+          cache {
+            use_auto_auth_token = true
+          }
+          
+          listener "tcp" {
+            address = "127.0.0.1:8100"
+            tls_disable = true
+          }
+          
+          template {
+            source = "/vault/templates/database-config.tpl"
+            destination = "/vault/secrets/database-config.json"
+            command = "echo 'Database config updated'"
+          }
+          
+          template {
+            source = "/vault/templates/api-config.tpl"
+            destination = "/vault/secrets/api-config.json"
+            command = "echo 'API config updated'"
+          }
+          EOF
+          
+          # Start vault agent
+          vault agent -config=/tmp/vault-agent.hcl
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+        - name: vault-templates
+          mountPath: /vault/templates
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: vault-secrets
+        emptyDir: {}
+      - name: vault-templates
+        configMap:
+          name: vault-templates
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-templates
+  namespace: nexus-infrastructure
+data:
+  database-config.tpl: |
+    {
+      "encryption": {
+        "enabled": true,
+        "key_id": "nexus-database",
+        "algorithm": "aes256-gcm96",
+        "vault_path": "transit/encrypt/nexus-database"
+      },
+      "connection": {
+        {{- with secret "nexus/data/database/connection" -}}
+        "host": "{{ .Data.data.host }}",
+        "port": {{ .Data.data.port }},
+        "database": "{{ .Data.data.database }}",
+        "username": "{{ .Data.data.username }}",
+        "password": "{{ .Data.data.password }}"
+        {{- end }}
+      }
+    }
+  
+  api-config.tpl: |
+    {
+      "encryption": {
+        "enabled": true,
+        "key_id": "nexus-api",
+        "algorithm": "aes256-gcm96",
+        "vault_path": "transit/encrypt/nexus-api"
+      },
+      "secrets": {
+        {{- with secret "nexus/data/api/secrets" -}}
+        "jwt_secret": "{{ .Data.data.jwt_secret }}",
+        "api_key": "{{ .Data.data.api_key }}",
+        "encryption_key": "{{ .Data.data.encryption_key }}"
+        {{- end }}
+      }
+    }
+

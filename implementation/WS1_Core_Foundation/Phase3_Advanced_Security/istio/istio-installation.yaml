@@ -1,0 +1,256 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    name: istio-system
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: service-mesh
+---
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: nexus-istio-control-plane
+  namespace: istio-system
+spec:
+  values:
+    global:
+      meshID: nexus-mesh
+      multiCluster:
+        clusterName: nexus-cluster
+      network: nexus-network
+      proxy:
+        # Enable automatic sidecar injection
+        autoInject: enabled
+        # Resource limits for sidecar proxies
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      # Enable distributed tracing
+      tracer:
+        zipkin:
+          address: jaeger-collector.istio-system:9411
+      # Security settings
+      defaultPodDisruptionBudget:
+        enabled: true
+      # Logging configuration
+      logging:
+        level: "default:info"
+  components:
+    pilot:
+      k8s:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        hpaSpec:
+          minReplicas: 2
+          maxReplicas: 5
+          metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 80
+        env:
+          # Enable external authorization
+          - name: EXTERNAL_ISTIOD
+            value: false
+          # Security settings
+          - name: PILOT_ENABLE_WORKLOAD_ENTRY_AUTOREGISTRATION
+            value: true
+          - name: PILOT_ENABLE_CROSS_CLUSTER_WORKLOAD_ENTRY
+            value: true
+    ingressGateways:
+    - name: istio-ingressgateway
+      enabled: true
+      k8s:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        hpaSpec:
+          minReplicas: 2
+          maxReplicas: 5
+        service:
+          type: LoadBalancer
+          ports:
+          - port: 15021
+            targetPort: 15021
+            name: status-port
+          - port: 80
+            targetPort: 8080
+            name: http2
+          - port: 443
+            targetPort: 8443
+            name: https
+          - port: 15443
+            targetPort: 15443
+            name: tls
+        env:
+          # Security headers
+          - name: ISTIO_META_ROUTER_MODE
+            value: "sni-dnat"
+    egressGateways:
+    - name: istio-egressgateway
+      enabled: true
+      k8s:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        hpaSpec:
+          minReplicas: 1
+          maxReplicas: 3
+  meshConfig:
+    # Enable automatic mTLS
+    defaultConfig:
+      proxyStatsMatcher:
+        inclusionRegexps:
+        - ".*outlier_detection.*"
+        - ".*circuit_breakers.*"
+        - ".*upstream_rq_retry.*"
+        - ".*_cx_.*"
+        exclusionRegexps:
+        - ".*osconfig.*"
+      # Tracing configuration
+      tracing:
+        zipkin:
+          address: jaeger-collector.istio-system:9411
+        sampling: 1.0
+      # Security settings
+      holdApplicationUntilProxyStarts: true
+    # Global mesh policy
+    defaultProviders:
+      metrics:
+      - prometheus
+      tracing:
+      - jaeger
+      accessLogging:
+      - envoy
+    # Extension providers
+    extensionProviders:
+    - name: prometheus
+      prometheus:
+        configOverride:
+          metric_relabeling_configs:
+          - source_labels: [__name__]
+            regex: 'istio_.*'
+            target_label: __tmp_istio_metric
+          - source_labels: [__tmp_istio_metric, __name__]
+            regex: '(.*);(.*)'
+            target_label: __name__
+            replacement: '${2}'
+    - name: jaeger
+      zipkin:
+        service: jaeger-collector.istio-system
+        port: 9411
+    - name: envoy
+      envoyFileAccessLog:
+        path: /dev/stdout
+        format: |
+          [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
+          %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT%
+          %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%"
+          "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"
+          %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS%
+          %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%
+    # Security settings
+    trustDomain: nexus-architect.local
+    # Certificate management
+    certificates:
+    - secretName: cacerts
+      dnsNames:
+      - nexus-architect.local
+      - "*.nexus-architect.local"
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: istio-system
+spec:
+  # Default deny-all policy - specific policies will allow traffic
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-security-config
+  namespace: istio-system
+data:
+  security-policy.yaml: |
+    # Istio Security Configuration
+    security:
+      # mTLS settings
+      mtls:
+        mode: STRICT
+        min_protocol_version: TLSV1_2
+        max_protocol_version: TLSV1_3
+        cipher_suites:
+          - ECDHE-ECDSA-AES256-GCM-SHA384
+          - ECDHE-RSA-AES256-GCM-SHA384
+          - ECDHE-ECDSA-CHACHA20-POLY1305
+          - ECDHE-RSA-CHACHA20-POLY1305
+          - ECDHE-ECDSA-AES128-GCM-SHA256
+          - ECDHE-RSA-AES128-GCM-SHA256
+      
+      # Certificate management
+      certificates:
+        auto_rotation: true
+        rotation_period: "24h"
+        grace_period: "1h"
+        
+      # Security headers
+      headers:
+        request:
+          add:
+            X-Frame-Options: DENY
+            X-Content-Type-Options: nosniff
+            X-XSS-Protection: "1; mode=block"
+            Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+            Content-Security-Policy: "default-src 'self'"
+        response:
+          remove:
+            - Server
+            - X-Powered-By
+            
+      # Rate limiting
+      rate_limiting:
+        global:
+          requests_per_second: 1000
+          burst: 2000
+        per_source:
+          requests_per_second: 100
+          burst: 200
+          
+      # Circuit breaker
+      circuit_breaker:
+        consecutive_errors: 5
+        interval: 30s
+        base_ejection_time: 30s
+        max_ejection_percent: 50
+        min_health_percent: 50
+

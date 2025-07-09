@@ -1,0 +1,1122 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-security
+  labels:
+    name: nexus-security
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: security-monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-monitoring-config
+  namespace: nexus-security
+data:
+  security-rules.yaml: |
+    # Security Monitoring Rules for Nexus Architect
+    security_rules:
+      # Authentication Anomalies
+      authentication:
+        failed_login_threshold:
+          rule: "failed_logins > 5 in 5 minutes"
+          severity: "high"
+          action: "block_ip"
+          description: "Multiple failed login attempts detected"
+        
+        unusual_login_location:
+          rule: "login from new geographic location"
+          severity: "medium"
+          action: "require_mfa"
+          description: "Login from unusual geographic location"
+        
+        concurrent_sessions:
+          rule: "concurrent_sessions > 3"
+          severity: "medium"
+          action: "alert"
+          description: "Multiple concurrent sessions detected"
+        
+        privileged_access:
+          rule: "admin_login outside business_hours"
+          severity: "high"
+          action: "alert_security_team"
+          description: "Privileged access outside business hours"
+      
+      # API Security
+      api_security:
+        rate_limit_exceeded:
+          rule: "api_requests > 1000 per minute"
+          severity: "medium"
+          action: "rate_limit"
+          description: "API rate limit exceeded"
+        
+        suspicious_endpoints:
+          rule: "access to /admin/* without proper authorization"
+          severity: "high"
+          action: "block_request"
+          description: "Unauthorized access to admin endpoints"
+        
+        data_exfiltration:
+          rule: "large_data_download > 100MB"
+          severity: "high"
+          action: "alert_and_log"
+          description: "Large data download detected"
+        
+        sql_injection:
+          rule: "sql_injection_pattern in request"
+          severity: "critical"
+          action: "block_and_alert"
+          description: "SQL injection attempt detected"
+      
+      # Network Security
+      network_security:
+        port_scanning:
+          rule: "connection_attempts > 100 to different_ports in 1 minute"
+          severity: "high"
+          action: "block_ip"
+          description: "Port scanning activity detected"
+        
+        ddos_attack:
+          rule: "requests > 10000 per minute from single_ip"
+          severity: "critical"
+          action: "block_ip_range"
+          description: "DDoS attack detected"
+        
+        lateral_movement:
+          rule: "internal_network_scanning"
+          severity: "high"
+          action: "isolate_host"
+          description: "Lateral movement attempt detected"
+        
+        dns_tunneling:
+          rule: "unusual_dns_queries > 1000 per minute"
+          severity: "medium"
+          action: "investigate"
+          description: "Potential DNS tunneling detected"
+      
+      # Data Security
+      data_security:
+        unauthorized_access:
+          rule: "access to sensitive_data without proper_role"
+          severity: "critical"
+          action: "block_and_alert"
+          description: "Unauthorized access to sensitive data"
+        
+        data_modification:
+          rule: "bulk_data_modification outside business_hours"
+          severity: "high"
+          action: "alert_and_log"
+          description: "Bulk data modification outside business hours"
+        
+        encryption_failure:
+          rule: "unencrypted_data_transmission"
+          severity: "critical"
+          action: "block_transmission"
+          description: "Unencrypted data transmission detected"
+        
+        backup_anomaly:
+          rule: "backup_failure or backup_size_anomaly"
+          severity: "medium"
+          action: "alert_admin"
+          description: "Backup process anomaly detected"
+      
+      # Compliance Violations
+      compliance:
+        gdpr_violation:
+          rule: "data_processing without consent"
+          severity: "critical"
+          action: "stop_processing"
+          description: "GDPR compliance violation detected"
+        
+        retention_violation:
+          rule: "data_retention > policy_limit"
+          severity: "high"
+          action: "auto_delete"
+          description: "Data retention policy violation"
+        
+        access_log_missing:
+          rule: "missing_audit_logs"
+          severity: "high"
+          action: "alert_compliance_team"
+          description: "Missing audit logs detected"
+        
+        unauthorized_export:
+          rule: "data_export without approval"
+          severity: "critical"
+          action: "block_and_alert"
+          description: "Unauthorized data export attempt"
+  
+  threat-detection.yaml: |
+    # Threat Detection Configuration
+    threat_detection:
+      # Machine Learning Models
+      ml_models:
+        anomaly_detection:
+          model_type: "isolation_forest"
+          features:
+            - request_frequency
+            - response_time
+            - error_rate
+            - data_volume
+            - user_behavior
+          training_data: "30_days_historical"
+          retrain_frequency: "weekly"
+          threshold: 0.95
+        
+        behavioral_analysis:
+          model_type: "lstm_autoencoder"
+          features:
+            - login_patterns
+            - api_usage_patterns
+            - data_access_patterns
+            - time_based_patterns
+          training_data: "90_days_historical"
+          retrain_frequency: "monthly"
+          threshold: 0.90
+        
+        threat_classification:
+          model_type: "random_forest"
+          features:
+            - source_ip_reputation
+            - request_patterns
+            - payload_analysis
+            - geolocation_data
+          training_data: "threat_intelligence_feeds"
+          retrain_frequency: "daily"
+          threshold: 0.85
+      
+      # Threat Intelligence
+      threat_intelligence:
+        feeds:
+          - name: "malware_domains"
+            source: "public_feeds"
+            update_frequency: "hourly"
+            format: "json"
+          
+          - name: "malicious_ips"
+            source: "commercial_feeds"
+            update_frequency: "hourly"
+            format: "csv"
+          
+          - name: "attack_signatures"
+            source: "security_vendors"
+            update_frequency: "daily"
+            format: "yara"
+        
+        indicators:
+          - type: "ip_address"
+            action: "block"
+            retention: "90_days"
+          
+          - type: "domain"
+            action: "monitor"
+            retention: "30_days"
+          
+          - type: "file_hash"
+            action: "quarantine"
+            retention: "365_days"
+      
+      # Incident Response
+      incident_response:
+        severity_levels:
+          critical:
+            response_time: "15_minutes"
+            escalation: "immediate"
+            actions:
+              - "isolate_affected_systems"
+              - "notify_security_team"
+              - "activate_incident_response_team"
+              - "preserve_evidence"
+          
+          high:
+            response_time: "1_hour"
+            escalation: "within_2_hours"
+            actions:
+              - "investigate_threat"
+              - "notify_security_team"
+              - "implement_containment"
+          
+          medium:
+            response_time: "4_hours"
+            escalation: "within_24_hours"
+            actions:
+              - "log_incident"
+              - "schedule_investigation"
+              - "monitor_situation"
+          
+          low:
+            response_time: "24_hours"
+            escalation: "weekly_review"
+            actions:
+              - "log_incident"
+              - "add_to_monitoring"
+        
+        playbooks:
+          - name: "data_breach_response"
+            triggers:
+              - "unauthorized_data_access"
+              - "data_exfiltration"
+            steps:
+              - "isolate_affected_systems"
+              - "assess_data_impact"
+              - "notify_stakeholders"
+              - "implement_remediation"
+              - "conduct_forensics"
+              - "update_security_controls"
+          
+          - name: "malware_incident"
+            triggers:
+              - "malware_detection"
+              - "suspicious_file_execution"
+            steps:
+              - "quarantine_affected_systems"
+              - "analyze_malware"
+              - "check_lateral_movement"
+              - "clean_infected_systems"
+              - "update_signatures"
+          
+          - name: "ddos_response"
+            triggers:
+              - "ddos_attack_detected"
+              - "service_unavailability"
+            steps:
+              - "activate_ddos_protection"
+              - "scale_infrastructure"
+              - "block_attack_sources"
+              - "monitor_service_health"
+              - "communicate_with_stakeholders"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-monitoring-service
+  namespace: nexus-security
+  labels:
+    app: security-monitoring-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: security-monitoring-service
+  template:
+    metadata:
+      labels:
+        app: security-monitoring-service
+    spec:
+      serviceAccountName: nexus-security
+      containers:
+      - name: security-monitor
+        image: python:3.11-slim
+        ports:
+        - name: http
+          containerPort: 8082
+        - name: metrics
+          containerPort: 9090
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: security-db-secrets
+              key: database-url
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch.nexus-security:9200"
+        - name: PROMETHEUS_URL
+          value: "http://prometheus.nexus-infrastructure:9090"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install required packages
+          pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic requests \
+                     elasticsearch prometheus-client scikit-learn pandas numpy \
+                     tensorflow schedule asyncio aiohttp
+          
+          # Create security monitoring service
+          cat > /app/security_monitor.py <<'EOF'
+          """
+          Security Monitoring and Threat Detection Service
+          Real-time security monitoring, anomaly detection, and incident response
+          """
+          
+          import os
+          import json
+          import logging
+          import asyncio
+          import schedule
+          import time
+          from datetime import datetime, timedelta
+          from typing import List, Dict, Any, Optional
+          from enum import Enum
+          import threading
+          import hashlib
+          import ipaddress
+          
+          from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket
+          from pydantic import BaseModel, Field
+          import requests
+          import aiohttp
+          from elasticsearch import Elasticsearch
+          from prometheus_client import Counter, Histogram, Gauge, start_http_server
+          from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, Float, Integer
+          from sqlalchemy.ext.declarative import declarative_base
+          from sqlalchemy.orm import sessionmaker, Session
+          import pandas as pd
+          import numpy as np
+          from sklearn.ensemble import IsolationForest
+          from sklearn.preprocessing import StandardScaler
+          
+          # Configure logging
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          # Prometheus metrics
+          security_events_total = Counter('security_events_total', 'Total security events', ['event_type', 'severity'])
+          threat_detection_duration = Histogram('threat_detection_duration_seconds', 'Time spent on threat detection')
+          active_threats = Gauge('active_threats', 'Number of active threats')
+          blocked_ips = Gauge('blocked_ips_total', 'Total number of blocked IPs')
+          
+          # Database setup
+          DATABASE_URL = os.getenv("DATABASE_URL")
+          engine = create_engine(DATABASE_URL)
+          SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+          Base = declarative_base()
+          
+          # Elasticsearch setup
+          ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL")
+          es = Elasticsearch([ELASTICSEARCH_URL]) if ELASTICSEARCH_URL else None
+          
+          class ThreatSeverity(str, Enum):
+              CRITICAL = "critical"
+              HIGH = "high"
+              MEDIUM = "medium"
+              LOW = "low"
+              INFO = "info"
+          
+          class ThreatStatus(str, Enum):
+              ACTIVE = "active"
+              INVESTIGATING = "investigating"
+              CONTAINED = "contained"
+              RESOLVED = "resolved"
+              FALSE_POSITIVE = "false_positive"
+          
+          class SecurityEvent(Base):
+              __tablename__ = "security_events"
+              
+              id = Column(String, primary_key=True)
+              event_type = Column(String)
+              severity = Column(String)
+              source_ip = Column(String)
+              target_ip = Column(String)
+              user_id = Column(String)
+              description = Column(Text)
+              raw_data = Column(Text)
+              status = Column(String, default=ThreatStatus.ACTIVE)
+              created_at = Column(DateTime, default=datetime.utcnow)
+              updated_at = Column(DateTime, default=datetime.utcnow)
+              resolved_at = Column(DateTime)
+          
+          class ThreatIntelligence(Base):
+              __tablename__ = "threat_intelligence"
+              
+              id = Column(String, primary_key=True)
+              indicator_type = Column(String)  # ip, domain, hash, etc.
+              indicator_value = Column(String)
+              threat_type = Column(String)
+              severity = Column(String)
+              source = Column(String)
+              confidence = Column(Float)
+              first_seen = Column(DateTime)
+              last_seen = Column(DateTime)
+              created_at = Column(DateTime, default=datetime.utcnow)
+          
+          class IncidentResponse(Base):
+              __tablename__ = "incident_responses"
+              
+              id = Column(String, primary_key=True)
+              incident_type = Column(String)
+              severity = Column(String)
+              status = Column(String)
+              description = Column(Text)
+              affected_systems = Column(Text)
+              response_actions = Column(Text)
+              assigned_to = Column(String)
+              created_at = Column(DateTime, default=datetime.utcnow)
+              updated_at = Column(DateTime, default=datetime.utcnow)
+              resolved_at = Column(DateTime)
+          
+          class BlockedIP(Base):
+              __tablename__ = "blocked_ips"
+              
+              id = Column(String, primary_key=True)
+              ip_address = Column(String, unique=True)
+              reason = Column(String)
+              blocked_at = Column(DateTime, default=datetime.utcnow)
+              expires_at = Column(DateTime)
+              created_by = Column(String)
+          
+          # Create tables
+          Base.metadata.create_all(bind=engine)
+          
+          # FastAPI app
+          app = FastAPI(
+              title="Security Monitoring Service",
+              description="Real-time security monitoring and threat detection",
+              version="1.0.0"
+          )
+          
+          # Pydantic models
+          class SecurityEventCreate(BaseModel):
+              event_type: str
+              severity: ThreatSeverity
+              source_ip: Optional[str] = None
+              target_ip: Optional[str] = None
+              user_id: Optional[str] = None
+              description: str
+              raw_data: Optional[str] = None
+          
+          class SecurityEventResponse(BaseModel):
+              id: str
+              event_type: str
+              severity: str
+              source_ip: Optional[str]
+              target_ip: Optional[str]
+              user_id: Optional[str]
+              description: str
+              status: str
+              created_at: datetime
+          
+          class ThreatDetectionResult(BaseModel):
+              threat_detected: bool
+              threat_type: Optional[str]
+              severity: ThreatSeverity
+              confidence: float
+              indicators: List[str]
+              recommended_actions: List[str]
+          
+          class SecurityDashboard(BaseModel):
+              active_threats: int
+              events_last_24h: int
+              blocked_ips: int
+              top_threat_types: List[Dict[str, Any]]
+              recent_events: List[SecurityEventResponse]
+              threat_trends: Dict[str, List[int]]
+          
+          # Database dependency
+          def get_db():
+              db = SessionLocal()
+              try:
+                  yield db
+              finally:
+                  db.close()
+          
+          # Security monitoring functions
+          class ThreatDetector:
+              def __init__(self):
+                  self.anomaly_model = IsolationForest(contamination=0.1, random_state=42)
+                  self.scaler = StandardScaler()
+                  self.is_trained = False
+                  self.threat_patterns = self.load_threat_patterns()
+              
+              def load_threat_patterns(self) -> Dict[str, Any]:
+                  """Load known threat patterns"""
+                  return {
+                      "sql_injection": [
+                          r"(\%27)|(\')|(\-\-)|(\%23)|(#)",
+                          r"((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))",
+                          r"w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))"
+                      ],
+                      "xss": [
+                          r"<script[^>]*>.*?</script>",
+                          r"javascript:",
+                          r"on\w+\s*="
+                      ],
+                      "command_injection": [
+                          r"(;|\||`|&|\$\(|\$\{)",
+                          r"(nc|netcat|wget|curl)\s",
+                          r"/bin/(bash|sh|csh|ksh|zsh)"
+                      ],
+                      "path_traversal": [
+                          r"(\.\./){2,}",
+                          r"(\.\.\\){2,}",
+                          r"(\.\.%2f){2,}"
+                      ]
+                  }
+              
+              def train_anomaly_model(self, training_data: pd.DataFrame):
+                  """Train the anomaly detection model"""
+                  try:
+                      if len(training_data) < 100:
+                          logger.warning("Insufficient training data for anomaly detection")
+                          return
+                      
+                      # Prepare features
+                      features = ['request_count', 'error_rate', 'response_time', 'data_volume']
+                      X = training_data[features].fillna(0)
+                      
+                      # Scale features
+                      X_scaled = self.scaler.fit_transform(X)
+                      
+                      # Train model
+                      self.anomaly_model.fit(X_scaled)
+                      self.is_trained = True
+                      
+                      logger.info("Anomaly detection model trained successfully")
+                  except Exception as e:
+                      logger.error(f"Failed to train anomaly model: {e}")
+              
+              def detect_anomalies(self, data: Dict[str, float]) -> bool:
+                  """Detect anomalies in real-time data"""
+                  if not self.is_trained:
+                      return False
+                  
+                  try:
+                      # Prepare features
+                      features = [
+                          data.get('request_count', 0),
+                          data.get('error_rate', 0),
+                          data.get('response_time', 0),
+                          data.get('data_volume', 0)
+                      ]
+                      
+                      # Scale features
+                      X_scaled = self.scaler.transform([features])
+                      
+                      # Predict anomaly
+                      prediction = self.anomaly_model.predict(X_scaled)
+                      return prediction[0] == -1  # -1 indicates anomaly
+                  except Exception as e:
+                      logger.error(f"Failed to detect anomalies: {e}")
+                      return False
+              
+              def detect_attack_patterns(self, request_data: str) -> List[str]:
+                  """Detect known attack patterns in request data"""
+                  detected_patterns = []
+                  
+                  for pattern_type, patterns in self.threat_patterns.items():
+                      for pattern in patterns:
+                          import re
+                          if re.search(pattern, request_data, re.IGNORECASE):
+                              detected_patterns.append(pattern_type)
+                              break
+                  
+                  return detected_patterns
+              
+              def analyze_ip_reputation(self, ip_address: str) -> Dict[str, Any]:
+                  """Analyze IP address reputation"""
+                  try:
+                      # Check if IP is in private ranges
+                      ip = ipaddress.ip_address(ip_address)
+                      if ip.is_private:
+                          return {"reputation": "trusted", "score": 1.0, "reason": "private_ip"}
+                      
+                      # Check against threat intelligence
+                      db = SessionLocal()
+                      threat_intel = db.query(ThreatIntelligence).filter(
+                          ThreatIntelligence.indicator_type == "ip",
+                          ThreatIntelligence.indicator_value == ip_address
+                      ).first()
+                      db.close()
+                      
+                      if threat_intel:
+                          return {
+                              "reputation": "malicious",
+                              "score": 0.0,
+                              "reason": threat_intel.threat_type,
+                              "confidence": threat_intel.confidence
+                          }
+                      
+                      # Default to unknown
+                      return {"reputation": "unknown", "score": 0.5, "reason": "no_data"}
+                  except Exception as e:
+                      logger.error(f"Failed to analyze IP reputation: {e}")
+                      return {"reputation": "unknown", "score": 0.5, "reason": "analysis_error"}
+          
+          # Initialize threat detector
+          threat_detector = ThreatDetector()
+          
+          # Security monitoring functions
+          async def process_security_event(event_data: Dict[str, Any]) -> ThreatDetectionResult:
+              """Process and analyze security events"""
+              try:
+                  # Extract relevant information
+                  source_ip = event_data.get('source_ip')
+                  request_data = event_data.get('request_data', '')
+                  user_agent = event_data.get('user_agent', '')
+                  
+                  threats_detected = []
+                  confidence_scores = []
+                  
+                  # Check for attack patterns
+                  attack_patterns = threat_detector.detect_attack_patterns(request_data)
+                  if attack_patterns:
+                      threats_detected.extend(attack_patterns)
+                      confidence_scores.append(0.9)
+                  
+                  # Check IP reputation
+                  if source_ip:
+                      ip_analysis = threat_detector.analyze_ip_reputation(source_ip)
+                      if ip_analysis['reputation'] == 'malicious':
+                          threats_detected.append('malicious_ip')
+                          confidence_scores.append(ip_analysis.get('confidence', 0.8))
+                  
+                  # Check for anomalies
+                  anomaly_data = {
+                      'request_count': event_data.get('request_count', 1),
+                      'error_rate': event_data.get('error_rate', 0),
+                      'response_time': event_data.get('response_time', 0),
+                      'data_volume': event_data.get('data_volume', 0)
+                  }
+                  
+                  if threat_detector.detect_anomalies(anomaly_data):
+                      threats_detected.append('anomalous_behavior')
+                      confidence_scores.append(0.7)
+                  
+                  # Determine overall threat level
+                  if threats_detected:
+                      max_confidence = max(confidence_scores) if confidence_scores else 0.5
+                      
+                      if max_confidence >= 0.9:
+                          severity = ThreatSeverity.CRITICAL
+                      elif max_confidence >= 0.7:
+                          severity = ThreatSeverity.HIGH
+                      elif max_confidence >= 0.5:
+                          severity = ThreatSeverity.MEDIUM
+                      else:
+                          severity = ThreatSeverity.LOW
+                      
+                      # Generate recommended actions
+                      recommended_actions = generate_recommended_actions(threats_detected, severity)
+                      
+                      return ThreatDetectionResult(
+                          threat_detected=True,
+                          threat_type=threats_detected[0] if threats_detected else None,
+                          severity=severity,
+                          confidence=max_confidence,
+                          indicators=threats_detected,
+                          recommended_actions=recommended_actions
+                      )
+                  else:
+                      return ThreatDetectionResult(
+                          threat_detected=False,
+                          threat_type=None,
+                          severity=ThreatSeverity.INFO,
+                          confidence=0.0,
+                          indicators=[],
+                          recommended_actions=[]
+                      )
+              except Exception as e:
+                  logger.error(f"Failed to process security event: {e}")
+                  return ThreatDetectionResult(
+                      threat_detected=False,
+                      threat_type=None,
+                      severity=ThreatSeverity.INFO,
+                      confidence=0.0,
+                      indicators=[],
+                      recommended_actions=[]
+                  )
+          
+          def generate_recommended_actions(threats: List[str], severity: ThreatSeverity) -> List[str]:
+              """Generate recommended actions based on detected threats"""
+              actions = []
+              
+              if 'sql_injection' in threats or 'xss' in threats or 'command_injection' in threats:
+                  actions.extend([
+                      "Block the source IP immediately",
+                      "Review and sanitize input validation",
+                      "Check for data exfiltration",
+                      "Update WAF rules"
+                  ])
+              
+              if 'malicious_ip' in threats:
+                  actions.extend([
+                      "Block the malicious IP",
+                      "Check for lateral movement",
+                      "Review access logs"
+                  ])
+              
+              if 'anomalous_behavior' in threats:
+                  actions.extend([
+                      "Monitor user activity closely",
+                      "Verify user identity",
+                      "Check for account compromise"
+                  ])
+              
+              if severity in [ThreatSeverity.CRITICAL, ThreatSeverity.HIGH]:
+                  actions.extend([
+                      "Notify security team immediately",
+                      "Activate incident response plan",
+                      "Preserve evidence for forensics"
+                  ])
+              
+              return actions
+          
+          async def block_ip_address(ip_address: str, reason: str, duration_hours: int = 24):
+              """Block an IP address"""
+              try:
+                  db = SessionLocal()
+                  
+                  # Check if IP is already blocked
+                  existing_block = db.query(BlockedIP).filter(
+                      BlockedIP.ip_address == ip_address
+                  ).first()
+                  
+                  if existing_block:
+                      # Update expiration time
+                      existing_block.expires_at = datetime.utcnow() + timedelta(hours=duration_hours)
+                      existing_block.reason = reason
+                  else:
+                      # Create new block
+                      blocked_ip = BlockedIP(
+                          id=f"block_{hashlib.md5(ip_address.encode()).hexdigest()}",
+                          ip_address=ip_address,
+                          reason=reason,
+                          expires_at=datetime.utcnow() + timedelta(hours=duration_hours),
+                          created_by="security_monitoring_system"
+                      )
+                      db.add(blocked_ip)
+                  
+                  db.commit()
+                  db.close()
+                  
+                  # Update metrics
+                  blocked_ips.inc()
+                  
+                  logger.info(f"Blocked IP {ip_address} for {reason}")
+                  
+                  # TODO: Integrate with firewall/WAF to actually block the IP
+                  
+              except Exception as e:
+                  logger.error(f"Failed to block IP {ip_address}: {e}")
+          
+          async def create_incident(event: SecurityEvent, threat_result: ThreatDetectionResult):
+              """Create an incident response record"""
+              try:
+                  db = SessionLocal()
+                  
+                  incident = IncidentResponse(
+                      id=f"incident_{int(datetime.utcnow().timestamp())}",
+                      incident_type=threat_result.threat_type or "unknown",
+                      severity=threat_result.severity,
+                      status=ThreatStatus.ACTIVE,
+                      description=f"Security event detected: {event.description}",
+                      affected_systems=json.dumps([event.target_ip] if event.target_ip else []),
+                      response_actions=json.dumps(threat_result.recommended_actions),
+                      assigned_to="security_team"
+                  )
+                  
+                  db.add(incident)
+                  db.commit()
+                  db.close()
+                  
+                  logger.info(f"Created incident {incident.id} for event {event.id}")
+                  
+              except Exception as e:
+                  logger.error(f"Failed to create incident: {e}")
+          
+          def cleanup_expired_blocks():
+              """Clean up expired IP blocks"""
+              try:
+                  db = SessionLocal()
+                  
+                  expired_blocks = db.query(BlockedIP).filter(
+                      BlockedIP.expires_at <= datetime.utcnow()
+                  ).all()
+                  
+                  for block in expired_blocks:
+                      db.delete(block)
+                      blocked_ips.dec()
+                      logger.info(f"Removed expired block for IP {block.ip_address}")
+                  
+                  db.commit()
+                  db.close()
+                  
+              except Exception as e:
+                  logger.error(f"Failed to cleanup expired blocks: {e}")
+          
+          def update_threat_intelligence():
+              """Update threat intelligence feeds"""
+              try:
+                  # This would integrate with external threat intelligence feeds
+                  # For now, we'll just log that it's running
+                  logger.info("Updating threat intelligence feeds")
+                  
+                  # TODO: Implement actual threat intelligence feed integration
+                  
+              except Exception as e:
+                  logger.error(f"Failed to update threat intelligence: {e}")
+          
+          # Scheduled tasks
+          def run_scheduled_tasks():
+              """Run scheduled security tasks"""
+              schedule.every(1).minutes.do(cleanup_expired_blocks)
+              schedule.every(1).hours.do(update_threat_intelligence)
+              
+              while True:
+                  schedule.run_pending()
+                  time.sleep(60)
+          
+          # API Endpoints
+          @app.post("/api/v1/security/events", response_model=SecurityEventResponse)
+          async def create_security_event(
+              event: SecurityEventCreate,
+              background_tasks: BackgroundTasks,
+              db: Session = Depends(get_db)
+          ):
+              """Create a new security event"""
+              
+              # Create event record
+              event_id = f"event_{int(datetime.utcnow().timestamp())}"
+              db_event = SecurityEvent(
+                  id=event_id,
+                  event_type=event.event_type,
+                  severity=event.severity,
+                  source_ip=event.source_ip,
+                  target_ip=event.target_ip,
+                  user_id=event.user_id,
+                  description=event.description,
+                  raw_data=event.raw_data
+              )
+              db.add(db_event)
+              db.commit()
+              db.refresh(db_event)
+              
+              # Update metrics
+              security_events_total.labels(event_type=event.event_type, severity=event.severity).inc()
+              
+              # Process event in background
+              background_tasks.add_task(process_and_respond_to_event, db_event)
+              
+              return SecurityEventResponse(
+                  id=db_event.id,
+                  event_type=db_event.event_type,
+                  severity=db_event.severity,
+                  source_ip=db_event.source_ip,
+                  target_ip=db_event.target_ip,
+                  user_id=db_event.user_id,
+                  description=db_event.description,
+                  status=db_event.status,
+                  created_at=db_event.created_at
+              )
+          
+          @app.get("/api/v1/security/dashboard", response_model=SecurityDashboard)
+          async def get_security_dashboard(db: Session = Depends(get_db)):
+              """Get security monitoring dashboard"""
+              
+              # Get active threats
+              active_threats_count = db.query(SecurityEvent).filter(
+                  SecurityEvent.status == ThreatStatus.ACTIVE
+              ).count()
+              
+              # Get events in last 24 hours
+              yesterday = datetime.utcnow() - timedelta(days=1)
+              events_24h = db.query(SecurityEvent).filter(
+                  SecurityEvent.created_at >= yesterday
+              ).count()
+              
+              # Get blocked IPs count
+              blocked_ips_count = db.query(BlockedIP).filter(
+                  BlockedIP.expires_at > datetime.utcnow()
+              ).count()
+              
+              # Get top threat types
+              # This would be more complex in a real implementation
+              top_threat_types = [
+                  {"type": "sql_injection", "count": 15},
+                  {"type": "malicious_ip", "count": 8},
+                  {"type": "anomalous_behavior", "count": 5}
+              ]
+              
+              # Get recent events
+              recent_events = db.query(SecurityEvent).order_by(
+                  SecurityEvent.created_at.desc()
+              ).limit(10).all()
+              
+              # Generate threat trends (mock data)
+              threat_trends = {
+                  "last_7_days": [5, 8, 12, 6, 9, 15, 11],
+                  "event_types": ["sql_injection", "xss", "malicious_ip", "anomaly"]
+              }
+              
+              return SecurityDashboard(
+                  active_threats=active_threats_count,
+                  events_last_24h=events_24h,
+                  blocked_ips=blocked_ips_count,
+                  top_threat_types=top_threat_types,
+                  recent_events=[
+                      SecurityEventResponse(
+                          id=event.id,
+                          event_type=event.event_type,
+                          severity=event.severity,
+                          source_ip=event.source_ip,
+                          target_ip=event.target_ip,
+                          user_id=event.user_id,
+                          description=event.description,
+                          status=event.status,
+                          created_at=event.created_at
+                      ) for event in recent_events
+                  ],
+                  threat_trends=threat_trends
+              )
+          
+          @app.post("/api/v1/security/analyze")
+          async def analyze_request(request_data: Dict[str, Any]) -> ThreatDetectionResult:
+              """Analyze a request for threats"""
+              return await process_security_event(request_data)
+          
+          @app.post("/api/v1/security/block-ip")
+          async def block_ip(ip_address: str, reason: str, duration_hours: int = 24):
+              """Block an IP address"""
+              await block_ip_address(ip_address, reason, duration_hours)
+              return {"message": f"IP {ip_address} blocked for {duration_hours} hours"}
+          
+          @app.get("/api/v1/security/blocked-ips")
+          async def get_blocked_ips(db: Session = Depends(get_db)):
+              """Get list of blocked IPs"""
+              blocked_ips = db.query(BlockedIP).filter(
+                  BlockedIP.expires_at > datetime.utcnow()
+              ).all()
+              
+              return [
+                  {
+                      "ip_address": block.ip_address,
+                      "reason": block.reason,
+                      "blocked_at": block.blocked_at,
+                      "expires_at": block.expires_at
+                  } for block in blocked_ips
+              ]
+          
+          async def process_and_respond_to_event(event: SecurityEvent):
+              """Background task to process and respond to security events"""
+              try:
+                  # Analyze the event
+                  event_data = {
+                      'source_ip': event.source_ip,
+                      'request_data': event.raw_data or '',
+                      'event_type': event.event_type
+                  }
+                  
+                  threat_result = await process_security_event(event_data)
+                  
+                  if threat_result.threat_detected:
+                      # Update active threats metric
+                      active_threats.inc()
+                      
+                      # Take automated response actions
+                      if threat_result.severity in [ThreatSeverity.CRITICAL, ThreatSeverity.HIGH]:
+                          if event.source_ip:
+                              await block_ip_address(
+                                  event.source_ip,
+                                  f"Automated block: {threat_result.threat_type}",
+                                  24 if threat_result.severity == ThreatSeverity.HIGH else 72
+                              )
+                          
+                          # Create incident
+                          await create_incident(event, threat_result)
+                      
+                      logger.warning(f"Threat detected: {threat_result.threat_type} "
+                                   f"(severity: {threat_result.severity}, "
+                                   f"confidence: {threat_result.confidence})")
+                  
+              except Exception as e:
+                  logger.error(f"Failed to process security event {event.id}: {e}")
+          
+          @app.websocket("/ws/security-events")
+          async def websocket_security_events(websocket: WebSocket):
+              """WebSocket endpoint for real-time security events"""
+              await websocket.accept()
+              try:
+                  while True:
+                      # In a real implementation, this would stream real-time events
+                      await asyncio.sleep(5)
+                      await websocket.send_json({
+                          "type": "security_event",
+                          "data": {
+                              "timestamp": datetime.utcnow().isoformat(),
+                              "event_type": "test_event",
+                              "severity": "info",
+                              "message": "Test security event"
+                          }
+                      })
+              except Exception as e:
+                  logger.error(f"WebSocket error: {e}")
+          
+          @app.get("/health")
+          async def health_check():
+              return {"status": "healthy", "service": "security-monitoring"}
+          
+          @app.get("/metrics")
+          async def get_metrics():
+              """Prometheus metrics endpoint"""
+              from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+              return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+          
+          # Initialize on startup
+          @app.on_event("startup")
+          async def startup_event():
+              # Start Prometheus metrics server
+              start_http_server(9090)
+              
+              # Start scheduled tasks in background thread
+              scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
+              scheduler_thread.start()
+              
+              logger.info("Security monitoring service started")
+          
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="0.0.0.0", port=8082)
+          EOF
+          
+          # Start the service
+          cd /app && python security_monitor.py
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "300m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8082
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8082
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-monitoring-service
+  namespace: nexus-security
+spec:
+  ports:
+  - name: http
+    port: 8082
+    targetPort: 8082
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+  selector:
+    app: security-monitoring-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-security
+  namespace: nexus-security
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: security-db-secrets
+  namespace: nexus-security
+type: Opaque
+data:
+  database-url: cG9zdGdyZXNxbDovL25leHVzOk5leHVzREIyMDI0QHBvc3RncmVzcWwtcHJpbWFyeS5uZXh1cy1pbmZyYXN0cnVjdHVyZTo1NDMyL25leHVz
+

@@ -1,0 +1,451 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexus-infrastructure-isolation
+  namespace: nexus-infrastructure
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from nexus-auth namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-auth
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+  # Allow traffic from nexus-api namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-api
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+  # Allow traffic from istio-system for monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+    ports:
+    - protocol: TCP
+      port: 9090  # Prometheus
+    - protocol: TCP
+      port: 3000  # Grafana
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow NTP
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 123
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexus-auth-isolation
+  namespace: nexus-auth
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from nexus-gateway namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-gateway
+    ports:
+    - protocol: TCP
+      port: 8080  # Keycloak
+  # Allow traffic from nexus-api namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-api
+    ports:
+    - protocol: TCP
+      port: 8080  # Keycloak
+  # Allow traffic from istio-system
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+  egress:
+  # Allow access to infrastructure services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-infrastructure
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS for external services
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexus-gateway-isolation
+  namespace: nexus-gateway
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow external traffic through ingress
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8000  # Kong proxy
+    - protocol: TCP
+      port: 8443  # Kong proxy SSL
+  # Allow traffic from istio-system
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+  egress:
+  # Allow access to auth services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-auth
+    ports:
+    - protocol: TCP
+      port: 8080  # Keycloak
+  # Allow access to API services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-api
+    ports:
+    - protocol: TCP
+      port: 8000  # Nexus API
+  # Allow access to infrastructure services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-infrastructure
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexus-api-isolation
+  namespace: nexus-api
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from nexus-gateway namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-gateway
+    ports:
+    - protocol: TCP
+      port: 8000  # FastAPI
+  # Allow traffic from istio-system
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+  egress:
+  # Allow access to auth services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-auth
+    ports:
+    - protocol: TCP
+      port: 8080  # Keycloak
+  # Allow access to infrastructure services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: nexus-infrastructure
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS for external AI services
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: nexus-infrastructure-authz
+  namespace: nexus-infrastructure
+spec:
+  rules:
+  # Allow access from nexus-auth namespace
+  - from:
+    - source:
+        namespaces: ["nexus-auth"]
+    to:
+    - operation:
+        ports: ["5432", "6379"]
+  # Allow access from nexus-api namespace
+  - from:
+    - source:
+        namespaces: ["nexus-api"]
+    to:
+    - operation:
+        ports: ["5432", "6379"]
+  # Allow monitoring from istio-system
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        ports: ["9090", "3000"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: nexus-auth-authz
+  namespace: nexus-auth
+spec:
+  rules:
+  # Allow access from nexus-gateway namespace
+  - from:
+    - source:
+        namespaces: ["nexus-gateway"]
+    to:
+    - operation:
+        ports: ["8080"]
+  # Allow access from nexus-api namespace
+  - from:
+    - source:
+        namespaces: ["nexus-api"]
+    to:
+    - operation:
+        ports: ["8080"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: nexus-gateway-authz
+  namespace: nexus-gateway
+spec:
+  rules:
+  # Allow external access to proxy ports
+  - to:
+    - operation:
+        ports: ["8000", "8443"]
+  # Allow admin access only from internal networks
+  - from:
+    - source:
+        ipBlocks: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+    to:
+    - operation:
+        ports: ["8001"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: nexus-api-authz
+  namespace: nexus-api
+spec:
+  rules:
+  # Allow access from nexus-gateway namespace
+  - from:
+    - source:
+        namespaces: ["nexus-gateway"]
+    to:
+    - operation:
+        ports: ["8000"]
+  # Allow health checks from istio-system
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        paths: ["/health", "/metrics"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: nexus-infrastructure-mtls
+  namespace: nexus-infrastructure
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: nexus-auth-mtls
+  namespace: nexus-auth
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: nexus-gateway-mtls
+  namespace: nexus-gateway
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: nexus-api-mtls
+  namespace: nexus-api
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: nexus-infrastructure-dr
+  namespace: nexus-infrastructure
+spec:
+  host: "*.nexus-infrastructure.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+        tcpKeepalive:
+          time: 7200s
+          interval: 75s
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: nexus-auth-dr
+  namespace: nexus-auth
+spec:
+  host: "*.nexus-auth.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+        maxRequestsPerConnection: 5
+        maxRetries: 3
+    outlierDetection:
+      consecutiveGatewayErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: nexus-gateway-dr
+  namespace: nexus-gateway
+spec:
+  host: "*.nexus-gateway.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 200
+        connectTimeout: 30s
+      http:
+        http1MaxPendingRequests: 200
+        http2MaxRequests: 2000
+        maxRequestsPerConnection: 20
+        maxRetries: 3
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 30
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: nexus-api-dr
+  namespace: nexus-api
+spec:
+  host: "*.nexus-api.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+
