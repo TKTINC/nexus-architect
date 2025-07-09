@@ -1,0 +1,445 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-ai-intelligence
+  labels:
+    name: nexus-ai-intelligence
+    component: ai-intelligence
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-serving-config
+  namespace: nexus-ai-intelligence
+data:
+  torchserve_config.properties: |
+    # TorchServe Configuration for Multi-Persona AI Models
+    inference_address=http://0.0.0.0:8080
+    management_address=http://0.0.0.0:8081
+    metrics_address=http://0.0.0.0:8082
+    
+    # Model serving configuration
+    model_store=/opt/ml/models
+    load_models=all
+    models={\
+      "security-architect-model": {\
+        "1.0": {\
+          "defaultVersion": true,\
+          "marName": "security-architect.mar",\
+          "minWorkers": 2,\
+          "maxWorkers": 8,\
+          "batchSize": 4,\
+          "maxBatchDelay": 100,\
+          "responseTimeout": 120\
+        }\
+      },\
+      "performance-engineer-model": {\
+        "1.0": {\
+          "defaultVersion": true,\
+          "marName": "performance-engineer.mar",\
+          "minWorkers": 2,\
+          "maxWorkers": 8,\
+          "batchSize": 4,\
+          "maxBatchDelay": 100,\
+          "responseTimeout": 120\
+        }\
+      },\
+      "application-architect-model": {\
+        "1.0": {\
+          "defaultVersion": true,\
+          "marName": "application-architect.mar",\
+          "minWorkers": 2,\
+          "maxWorkers": 8,\
+          "batchSize": 4,\
+          "maxBatchDelay": 100,\
+          "responseTimeout": 120\
+        }\
+      },\
+      "devops-specialist-model": {\
+        "1.0": {\
+          "defaultVersion": true,\
+          "marName": "devops-specialist.mar",\
+          "minWorkers": 2,\
+          "maxWorkers": 8,\
+          "batchSize": 4,\
+          "maxBatchDelay": 100,\
+          "responseTimeout": 120\
+        }\
+      },\
+      "compliance-auditor-model": {\
+        "1.0": {\
+          "defaultVersion": true,\
+          "marName": "compliance-auditor.mar",\
+          "minWorkers": 2,\
+          "maxWorkers": 8,\
+          "batchSize": 4,\
+          "maxBatchDelay": 100,\
+          "responseTimeout": 120\
+        }\
+      }\
+    }
+    
+    # Performance and scaling configuration
+    number_of_netty_threads=32
+    netty_client_threads=8
+    default_workers_per_model=4
+    job_queue_size=1000
+    async_logging=true
+    
+    # Metrics and monitoring
+    metrics_mode=prometheus
+    metrics_format=prometheus
+    enable_metrics_api=true
+    
+    # Security configuration
+    keystore_path=/opt/ml/certs/keystore.p12
+    keystore_pass=changeit
+    keystore_type=PKCS12
+    
+  model_config.yaml: |
+    # Model Configuration for Multi-Persona AI
+    models:
+      security_architect:
+        name: "Security Architect Model"
+        version: "1.0.0"
+        base_model: "gpt-4"
+        fallback_model: "claude-3-opus"
+        specialization: "cybersecurity"
+        
+        model_parameters:
+          temperature: 0.3
+          max_tokens: 2048
+          top_p: 0.9
+          frequency_penalty: 0.1
+          presence_penalty: 0.1
+        
+        fine_tuning:
+          enabled: true
+          dataset_path: "/opt/ml/datasets/security_architect_training.jsonl"
+          validation_split: 0.2
+          epochs: 3
+          learning_rate: 5e-5
+          batch_size: 8
+        
+        knowledge_base:
+          enabled: true
+          sources:
+            - "NIST Cybersecurity Framework"
+            - "OWASP Security Guidelines"
+            - "ISO 27001 Standards"
+            - "Security Architecture Patterns"
+          embedding_model: "text-embedding-ada-002"
+          vector_store: "weaviate"
+          similarity_threshold: 0.8
+      
+      performance_engineer:
+        name: "Performance Engineer Model"
+        version: "1.0.0"
+        base_model: "gpt-4"
+        fallback_model: "claude-3-sonnet"
+        specialization: "performance_optimization"
+        
+        model_parameters:
+          temperature: 0.2
+          max_tokens: 2048
+          top_p: 0.9
+          frequency_penalty: 0.0
+          presence_penalty: 0.0
+        
+        fine_tuning:
+          enabled: true
+          dataset_path: "/opt/ml/datasets/performance_engineer_training.jsonl"
+          validation_split: 0.2
+          epochs: 3
+          learning_rate: 5e-5
+          batch_size: 8
+        
+        knowledge_base:
+          enabled: true
+          sources:
+            - "Performance Optimization Guides"
+            - "Database Tuning Best Practices"
+            - "Caching Strategies"
+            - "Load Testing Methodologies"
+          embedding_model: "text-embedding-ada-002"
+          vector_store: "weaviate"
+          similarity_threshold: 0.8
+      
+      application_architect:
+        name: "Application Architect Model"
+        version: "1.0.0"
+        base_model: "gpt-4"
+        fallback_model: "claude-3-opus"
+        specialization: "software_architecture"
+        
+        model_parameters:
+          temperature: 0.4
+          max_tokens: 2048
+          top_p: 0.9
+          frequency_penalty: 0.1
+          presence_penalty: 0.1
+        
+        fine_tuning:
+          enabled: true
+          dataset_path: "/opt/ml/datasets/application_architect_training.jsonl"
+          validation_split: 0.2
+          epochs: 3
+          learning_rate: 5e-5
+          batch_size: 8
+        
+        knowledge_base:
+          enabled: true
+          sources:
+            - "Software Architecture Patterns"
+            - "Microservices Design Patterns"
+            - "Domain-Driven Design"
+            - "API Design Guidelines"
+          embedding_model: "text-embedding-ada-002"
+          vector_store: "weaviate"
+          similarity_threshold: 0.8
+      
+      devops_specialist:
+        name: "DevOps Specialist Model"
+        version: "1.0.0"
+        base_model: "gpt-4"
+        fallback_model: "claude-3-sonnet"
+        specialization: "devops_automation"
+        
+        model_parameters:
+          temperature: 0.3
+          max_tokens: 2048
+          top_p: 0.9
+          frequency_penalty: 0.0
+          presence_penalty: 0.0
+        
+        fine_tuning:
+          enabled: true
+          dataset_path: "/opt/ml/datasets/devops_specialist_training.jsonl"
+          validation_split: 0.2
+          epochs: 3
+          learning_rate: 5e-5
+          batch_size: 8
+        
+        knowledge_base:
+          enabled: true
+          sources:
+            - "CI/CD Best Practices"
+            - "Infrastructure as Code"
+            - "Kubernetes Operations"
+            - "Monitoring and Observability"
+          embedding_model: "text-embedding-ada-002"
+          vector_store: "weaviate"
+          similarity_threshold: 0.8
+      
+      compliance_auditor:
+        name: "Compliance Auditor Model"
+        version: "1.0.0"
+        base_model: "claude-3-opus"
+        fallback_model: "gpt-4"
+        specialization: "regulatory_compliance"
+        
+        model_parameters:
+          temperature: 0.2
+          max_tokens: 2048
+          top_p: 0.9
+          frequency_penalty: 0.0
+          presence_penalty: 0.0
+        
+        fine_tuning:
+          enabled: true
+          dataset_path: "/opt/ml/datasets/compliance_auditor_training.jsonl"
+          validation_split: 0.2
+          epochs: 3
+          learning_rate: 5e-5
+          batch_size: 8
+        
+        knowledge_base:
+          enabled: true
+          sources:
+            - "GDPR Compliance Guidelines"
+            - "HIPAA Requirements"
+            - "SOX Controls"
+            - "ISO 27001 Standards"
+          embedding_model: "text-embedding-ada-002"
+          vector_store: "weaviate"
+          similarity_threshold: 0.8
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: torchserve-multi-persona
+  namespace: nexus-ai-intelligence
+  labels:
+    app: torchserve-multi-persona
+    component: model-serving
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: torchserve-multi-persona
+  template:
+    metadata:
+      labels:
+        app: torchserve-multi-persona
+        component: model-serving
+    spec:
+      serviceAccountName: nexus-ai-intelligence
+      containers:
+      - name: torchserve
+        image: pytorch/torchserve:0.8.2-gpu
+        ports:
+        - name: inference
+          containerPort: 8080
+          protocol: TCP
+        - name: management
+          containerPort: 8081
+          protocol: TCP
+        - name: metrics
+          containerPort: 8082
+          protocol: TCP
+        env:
+        - name: TS_CONFIG_FILE
+          value: "/opt/ml/config/torchserve_config.properties"
+        - name: MODEL_STORE
+          value: "/opt/ml/models"
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /opt/ml/config
+        - name: model-store
+          mountPath: /opt/ml/models
+        - name: datasets
+          mountPath: /opt/ml/datasets
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: config-volume
+        configMap:
+          name: model-serving-config
+      - name: model-store
+        persistentVolumeClaim:
+          claimName: model-store-pvc
+      - name: datasets
+        persistentVolumeClaim:
+          claimName: training-datasets-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: torchserve-multi-persona-service
+  namespace: nexus-ai-intelligence
+  labels:
+    app: torchserve-multi-persona
+    component: model-serving
+spec:
+  type: ClusterIP
+  ports:
+  - name: inference
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: management
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  - name: metrics
+    port: 8082
+    targetPort: 8082
+    protocol: TCP
+  selector:
+    app: torchserve-multi-persona
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-store-pvc
+  namespace: nexus-ai-intelligence
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-datasets-pvc
+  namespace: nexus-ai-intelligence
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: fast-ssd
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: torchserve-multi-persona-hpa
+  namespace: nexus-ai-intelligence
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: torchserve-multi-persona
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: inference_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "50"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
