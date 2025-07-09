@@ -1,0 +1,553 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-knowledge-graph
+  labels:
+    name: nexus-knowledge-graph
+    component: knowledge-graph
+    workstream: ws2
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neo4j-config
+  namespace: nexus-knowledge-graph
+data:
+  neo4j.conf: |
+    # Neo4j Configuration for Nexus Architect Knowledge Graph
+    
+    # Network and Security
+    dbms.default_listen_address=0.0.0.0
+    dbms.default_advertised_address=$(hostname -f)
+    dbms.connector.bolt.enabled=true
+    dbms.connector.bolt.listen_address=0.0.0.0:7687
+    dbms.connector.http.enabled=true
+    dbms.connector.http.listen_address=0.0.0.0:7474
+    dbms.connector.https.enabled=true
+    dbms.connector.https.listen_address=0.0.0.0:7473
+    
+    # Authentication and Authorization
+    dbms.security.auth_enabled=true
+    dbms.security.procedures.unrestricted=gds.*,apoc.*
+    dbms.security.procedures.allowlist=gds.*,apoc.*
+    
+    # Memory Configuration
+    dbms.memory.heap.initial_size=2G
+    dbms.memory.heap.max_size=4G
+    dbms.memory.pagecache.size=2G
+    
+    # Transaction Configuration
+    dbms.transaction.timeout=60s
+    dbms.transaction.concurrent.maximum=1000
+    
+    # Clustering Configuration
+    causal_clustering.minimum_core_cluster_size_at_formation=3
+    causal_clustering.minimum_core_cluster_size_at_runtime=3
+    causal_clustering.initial_discovery_members=neo4j-core-0.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000,neo4j-core-1.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000,neo4j-core-2.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000
+    causal_clustering.discovery_listen_address=0.0.0.0:5000
+    causal_clustering.discovery_advertised_address=$(hostname -f):5000
+    causal_clustering.transaction_listen_address=0.0.0.0:6000
+    causal_clustering.transaction_advertised_address=$(hostname -f):6000
+    causal_clustering.raft_listen_address=0.0.0.0:7000
+    causal_clustering.raft_advertised_address=$(hostname -f):7000
+    
+    # Performance Tuning
+    dbms.query_cache_size=1000
+    dbms.query.cache.ttl=60000
+    cypher.default_language_version=4
+    cypher.hints_error=false
+    cypher.lenient_create_relationship=true
+    
+    # Logging
+    dbms.logs.query.enabled=true
+    dbms.logs.query.threshold=1s
+    dbms.logs.query.parameter_logging_enabled=true
+    
+    # APOC Configuration
+    apoc.export.file.enabled=true
+    apoc.import.file.enabled=true
+    apoc.import.file.use_neo4j_config=true
+    
+    # GDS Configuration
+    gds.enterprise.license_file=/licenses/gds.license
+    
+  apoc.conf: |
+    # APOC Configuration
+    apoc.trigger.enabled=true
+    apoc.ttl.enabled=true
+    apoc.uuid.enabled=true
+    apoc.import.file.enabled=true
+    apoc.export.file.enabled=true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-auth
+  namespace: nexus-knowledge-graph
+type: Opaque
+data:
+  NEO4J_AUTH: bmVvNGo6bmV4dXMtYXJjaGl0ZWN0LWdyYXBoLXBhc3N3b3Jk  # neo4j:nexus-architect-graph-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j-core
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j-core
+    component: database
+spec:
+  clusterIP: None
+  ports:
+  - name: discovery
+    port: 5000
+    targetPort: 5000
+  - name: transaction
+    port: 6000
+    targetPort: 6000
+  - name: raft
+    port: 7000
+    targetPort: 7000
+  - name: http
+    port: 7474
+    targetPort: 7474
+  - name: https
+    port: 7473
+    targetPort: 7473
+  - name: bolt
+    port: 7687
+    targetPort: 7687
+  selector:
+    app: neo4j-core
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j-lb
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j
+    component: load-balancer
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 7474
+    targetPort: 7474
+  - name: https
+    port: 7473
+    targetPort: 7473
+  - name: bolt
+    port: 7687
+    targetPort: 7687
+  selector:
+    app: neo4j-core
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: neo4j-core
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j-core
+    component: database
+spec:
+  serviceName: neo4j-core
+  replicas: 3
+  selector:
+    matchLabels:
+      app: neo4j-core
+  template:
+    metadata:
+      labels:
+        app: neo4j-core
+        component: database
+    spec:
+      serviceAccountName: nexus-knowledge-graph
+      containers:
+      - name: neo4j
+        image: neo4j:5.15-enterprise
+        ports:
+        - name: discovery
+          containerPort: 5000
+        - name: transaction
+          containerPort: 6000
+        - name: raft
+          containerPort: 7000
+        - name: http
+          containerPort: 7474
+        - name: https
+          containerPort: 7473
+        - name: bolt
+          containerPort: 7687
+        env:
+        - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+          value: "yes"
+        - name: NEO4J_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: neo4j-auth
+              key: NEO4J_AUTH
+        - name: NEO4J_dbms_mode
+          value: "CORE"
+        - name: NEO4J_causal__clustering_expected__core__cluster__size
+          value: "3"
+        - name: NEO4J_causal__clustering_initial__discovery__members
+          value: "neo4j-core-0.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000,neo4j-core-1.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000,neo4j-core-2.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000"
+        - name: NEO4J_dbms_connector_bolt_advertised__address
+          value: "$(hostname -f):7687"
+        - name: NEO4J_dbms_connector_http_advertised__address
+          value: "$(hostname -f):7474"
+        - name: NEO4J_causal__clustering_discovery__advertised__address
+          value: "$(hostname -f):5000"
+        - name: NEO4J_causal__clustering_transaction__advertised__address
+          value: "$(hostname -f):6000"
+        - name: NEO4J_causal__clustering_raft__advertised__address
+          value: "$(hostname -f):7000"
+        volumeMounts:
+        - name: neo4j-data
+          mountPath: /data
+        - name: neo4j-logs
+          mountPath: /logs
+        - name: neo4j-config
+          mountPath: /var/lib/neo4j/conf/neo4j.conf
+          subPath: neo4j.conf
+        - name: neo4j-config
+          mountPath: /var/lib/neo4j/conf/apoc.conf
+          subPath: apoc.conf
+        - name: neo4j-plugins
+          mountPath: /plugins
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "1"
+          limits:
+            memory: "8Gi"
+            cpu: "2"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7474
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7474
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: neo4j-config
+        configMap:
+          name: neo4j-config
+      - name: neo4j-plugins
+        emptyDir: {}
+      initContainers:
+      - name: install-plugins
+        image: neo4j:5.15-enterprise
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install APOC plugin
+          wget -O /plugins/apoc-5.15.0-core.jar https://github.com/neo4j-contrib/neo4j-apoc-procedures/releases/download/5.15.0/apoc-5.15.0-core.jar
+          
+          # Install Graph Data Science plugin
+          wget -O /plugins/neo4j-graph-data-science-2.5.8.jar https://graphdatascience.ninja/neo4j-graph-data-science-2.5.8.jar
+          
+          # Set permissions
+          chmod 644 /plugins/*.jar
+        volumeMounts:
+        - name: neo4j-plugins
+          mountPath: /plugins
+  volumeClaimTemplates:
+  - metadata:
+      name: neo4j-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 100Gi
+  - metadata:
+      name: neo4j-logs
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neo4j-read-replica
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j-read-replica
+    component: read-replica
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: neo4j-read-replica
+  template:
+    metadata:
+      labels:
+        app: neo4j-read-replica
+        component: read-replica
+    spec:
+      serviceAccountName: nexus-knowledge-graph
+      containers:
+      - name: neo4j
+        image: neo4j:5.15-enterprise
+        ports:
+        - name: http
+          containerPort: 7474
+        - name: https
+          containerPort: 7473
+        - name: bolt
+          containerPort: 7687
+        env:
+        - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+          value: "yes"
+        - name: NEO4J_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: neo4j-auth
+              key: NEO4J_AUTH
+        - name: NEO4J_dbms_mode
+          value: "READ_REPLICA"
+        - name: NEO4J_causal__clustering_initial__discovery__members
+          value: "neo4j-core-0.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000,neo4j-core-1.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000,neo4j-core-2.neo4j-core.nexus-knowledge-graph.svc.cluster.local:5000"
+        volumeMounts:
+        - name: neo4j-data
+          mountPath: /data
+        - name: neo4j-logs
+          mountPath: /logs
+        - name: neo4j-config
+          mountPath: /var/lib/neo4j/conf/neo4j.conf
+          subPath: neo4j.conf
+        - name: neo4j-plugins
+          mountPath: /plugins
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7474
+          initialDelaySeconds: 120
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7474
+          initialDelaySeconds: 60
+          periodSeconds: 10
+      volumes:
+      - name: neo4j-data
+        emptyDir: {}
+      - name: neo4j-logs
+        emptyDir: {}
+      - name: neo4j-config
+        configMap:
+          name: neo4j-config
+      - name: neo4j-plugins
+        emptyDir: {}
+      initContainers:
+      - name: install-plugins
+        image: neo4j:5.15-enterprise
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install APOC plugin
+          wget -O /plugins/apoc-5.15.0-core.jar https://github.com/neo4j-contrib/neo4j-apoc-procedures/releases/download/5.15.0/apoc-5.15.0-core.jar
+          
+          # Install Graph Data Science plugin
+          wget -O /plugins/neo4j-graph-data-science-2.5.8.jar https://graphdatascience.ninja/neo4j-graph-data-science-2.5.8.jar
+          
+          # Set permissions
+          chmod 644 /plugins/*.jar
+        volumeMounts:
+        - name: neo4j-plugins
+          mountPath: /plugins
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j-read-replica-lb
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j-read-replica
+    component: read-replica-lb
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 7474
+    targetPort: 7474
+  - name: https
+    port: 7473
+    targetPort: 7473
+  - name: bolt
+    port: 7687
+    targetPort: 7687
+  selector:
+    app: neo4j-read-replica
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-knowledge-graph
+  namespace: nexus-knowledge-graph
+  labels:
+    app: nexus-knowledge-graph
+    component: knowledge-graph
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nexus-knowledge-graph
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nexus-knowledge-graph
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nexus-knowledge-graph
+subjects:
+- kind: ServiceAccount
+  name: nexus-knowledge-graph
+  namespace: nexus-knowledge-graph
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: neo4j-metrics
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: neo4j-core
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /db/manage/server/jmx/domain/org.neo4j
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neo4j-backup-script
+  namespace: nexus-knowledge-graph
+data:
+  backup.sh: |
+    #!/bin/bash
+    
+    # Neo4j Backup Script for Nexus Architect Knowledge Graph
+    
+    set -e
+    
+    BACKUP_DIR="/backups"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_NAME="nexus-knowledge-graph-${TIMESTAMP}"
+    
+    echo "Starting Neo4j backup: ${BACKUP_NAME}"
+    
+    # Create backup directory
+    mkdir -p ${BACKUP_DIR}/${BACKUP_NAME}
+    
+    # Perform backup using neo4j-admin
+    neo4j-admin database backup --to-path=${BACKUP_DIR}/${BACKUP_NAME} neo4j
+    
+    # Compress backup
+    cd ${BACKUP_DIR}
+    tar -czf ${BACKUP_NAME}.tar.gz ${BACKUP_NAME}
+    rm -rf ${BACKUP_NAME}
+    
+    # Clean up old backups (keep last 7 days)
+    find ${BACKUP_DIR} -name "nexus-knowledge-graph-*.tar.gz" -mtime +7 -delete
+    
+    echo "Backup completed: ${BACKUP_NAME}.tar.gz"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: neo4j-backup
+  namespace: nexus-knowledge-graph
+  labels:
+    app: neo4j-backup
+    component: backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: nexus-knowledge-graph
+          containers:
+          - name: backup
+            image: neo4j:5.15-enterprise
+            command:
+            - /bin/bash
+            - /scripts/backup.sh
+            env:
+            - name: NEO4J_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: neo4j-auth
+                  key: NEO4J_AUTH
+            volumeMounts:
+            - name: backup-script
+              mountPath: /scripts
+            - name: backup-storage
+              mountPath: /backups
+            resources:
+              requests:
+                memory: "1Gi"
+                cpu: "500m"
+              limits:
+                memory: "2Gi"
+                cpu: "1"
+          volumes:
+          - name: backup-script
+            configMap:
+              name: neo4j-backup-script
+              defaultMode: 0755
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: neo4j-backup-pvc
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: neo4j-backup-pvc
+  namespace: nexus-knowledge-graph
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+  storageClassName: standard
+
