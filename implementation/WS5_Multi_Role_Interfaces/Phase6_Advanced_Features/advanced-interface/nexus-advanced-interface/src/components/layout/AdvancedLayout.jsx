@@ -1,326 +1,176 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../theme-provider';
-import {
-  Brain,
-  Cube,
-  Mic,
-  Activity,
-  Settings,
-  User,
-  Moon,
-  Sun,
-  Monitor,
-  Menu,
-  X,
-  Bell,
-  Search,
-  Palette,
-  Accessibility,
-  Zap
-} from 'lucide-react';
 
 export function AdvancedLayout({ children, userPreferences, onPreferencesChange }) {
-  const { theme, setTheme, accessibility, setAccessibility, generatePersonalizedTheme } = useTheme();
-  const location = useLocation();
+  const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const navigationItems = [
-    {
-      name: 'AI Dashboard',
-      href: '/dashboard',
-      icon: Brain,
-      description: 'Personalized AI-powered dashboard'
-    },
-    {
-      name: '3D Visualization',
-      href: '/3d-visualization',
-      icon: Cube,
-      description: 'Interactive 3D data visualization'
-    },
-    {
-      name: 'Voice Interface',
-      href: '/voice-interface',
-      icon: Mic,
-      description: 'Natural language voice commands'
-    },
-    {
-      name: 'Performance',
-      href: '/performance',
-      icon: Activity,
-      description: 'Real-time performance monitoring'
-    }
-  ];
+  const [voiceListening, setVoiceListening] = useState(false);
 
   useEffect(() => {
-    // Simulate real-time notifications
-    const notificationInterval = setInterval(() => {
-      const newNotification = {
-        id: Date.now(),
-        title: 'AI Insight',
-        message: 'New optimization opportunity detected',
-        type: 'info',
-        timestamp: new Date()
-      };
-      setNotifications(prev => [newNotification, ...prev.slice(0, 4)]);
-    }, 30000);
+    // Initialize voice recognition if enabled
+    if (userPreferences.personalization.voiceEnabled && 'webkitSpeechRecognition' in window) {
+      const recognition = new window.webkitSpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = userPreferences.language || 'en-US';
 
-    return () => clearInterval(notificationInterval);
-  }, []);
-
-  const handleThemeChange = (newTheme) => {
-    setTheme(newTheme);
-    onPreferencesChange({ theme: newTheme });
-  };
-
-  const handleAccessibilityChange = (key, value) => {
-    const newAccessibility = { ...accessibility, [key]: value };
-    setAccessibility(newAccessibility);
-    onPreferencesChange({ accessibility: newAccessibility });
-  };
-
-  const generateAITheme = async () => {
-    try {
-      // Simulate user behavior data
-      const behaviorData = {
-        interactions: [
-          { elementColor: '221.2 83.2% 53.3%', count: 15 },
-          { elementColor: '217.2 91.2% 59.8%', count: 8 }
-        ],
-        timeSpent: { dashboard: 3600, visualization: 1200 },
-        preferences: userPreferences
+      recognition.onstart = () => setVoiceListening(true);
+      recognition.onend = () => setVoiceListening(false);
+      recognition.onresult = (event) => {
+        const transcript = event.results[event.results.length - 1][0].transcript;
+        handleVoiceCommand(transcript);
       };
 
-      const personalizedTheme = await generatePersonalizedTheme(behaviorData);
-      if (personalizedTheme) {
-        console.log('Generated personalized theme:', personalizedTheme);
+      // Store recognition instance for cleanup
+      window.nexusVoiceRecognition = recognition;
+    }
+
+    return () => {
+      if (window.nexusVoiceRecognition) {
+        window.nexusVoiceRecognition.stop();
       }
-    } catch (error) {
-      console.error('Failed to generate AI theme:', error);
+    };
+  }, [userPreferences]);
+
+  const handleVoiceCommand = (command) => {
+    const lowerCommand = command.toLowerCase();
+    
+    if (lowerCommand.includes('dark mode') || lowerCommand.includes('dark theme')) {
+      setTheme('dark');
+    } else if (lowerCommand.includes('light mode') || lowerCommand.includes('light theme')) {
+      setTheme('light');
+    } else if (lowerCommand.includes('toggle sidebar')) {
+      setSidebarOpen(!sidebarOpen);
+    }
+    // Add more voice commands as needed
+  };
+
+  const startVoiceRecognition = () => {
+    if (window.nexusVoiceRecognition && !voiceListening) {
+      window.nexusVoiceRecognition.start();
     }
   };
 
-  const ThemeToggle = () => (
-    <div className="flex items-center space-x-2">
-      <button
-        onClick={() => handleThemeChange('light')}
-        className={`p-2 rounded-md transition-colors ${
-          theme === 'light' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-        }`}
-        title="Light theme"
-      >
-        <Sun className="h-4 w-4" />
-      </button>
-      <button
-        onClick={() => handleThemeChange('dark')}
-        className={`p-2 rounded-md transition-colors ${
-          theme === 'dark' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-        }`}
-        title="Dark theme"
-      >
-        <Moon className="h-4 w-4" />
-      </button>
-      <button
-        onClick={() => handleThemeChange('system')}
-        className={`p-2 rounded-md transition-colors ${
-          theme === 'system' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-        }`}
-        title="System theme"
-      >
-        <Monitor className="h-4 w-4" />
-      </button>
-      <button
-        onClick={generateAITheme}
-        className="p-2 rounded-md hover:bg-muted transition-colors"
-        title="Generate AI theme"
-      >
-        <Palette className="h-4 w-4" />
-      </button>
-    </div>
-  );
-
-  const AccessibilityControls = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">High Contrast</label>
-        <button
-          onClick={() => handleAccessibilityChange('highContrast', !accessibility.highContrast)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            accessibility.highContrast ? 'bg-primary' : 'bg-muted'
-          }`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-              accessibility.highContrast ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
-      </div>
-      
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">Reduced Motion</label>
-        <button
-          onClick={() => handleAccessibilityChange('reducedMotion', !accessibility.reducedMotion)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            accessibility.reducedMotion ? 'bg-primary' : 'bg-muted'
-          }`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-              accessibility.reducedMotion ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Font Size</label>
-        <select
-          value={accessibility.fontSize}
-          onChange={(e) => handleAccessibilityChange('fontSize', e.target.value)}
-          className="w-full p-2 border rounded-md bg-background"
-        >
-          <option value="small">Small</option>
-          <option value="medium">Medium</option>
-          <option value="large">Large</option>
-          <option value="xlarge">Extra Large</option>
-        </select>
-      </div>
-    </div>
-  );
+  const stopVoiceRecognition = () => {
+    if (window.nexusVoiceRecognition && voiceListening) {
+      window.nexusVoiceRecognition.stop();
+    }
+  };
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b">
-          <h1 className="text-xl font-bold gradient-text">Nexus Advanced</h1>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-2 rounded-md hover:bg-muted"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <nav className="flex-1 px-4 py-6 space-y-2">
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.href;
-            
-            return (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-glow'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <Icon className="mr-3 h-5 w-5" />
-                <div>
-                  <div>{item.name}</div>
-                  <div className="text-xs opacity-70">{item.description}</div>
-                </div>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t">
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium mb-2 flex items-center">
-                <Palette className="mr-2 h-4 w-4" />
-                Theme
-              </h3>
-              <ThemeToggle />
-            </div>
-            
-            <div>
-              <h3 className="text-sm font-medium mb-2 flex items-center">
-                <Accessibility className="mr-2 h-4 w-4" />
-                Accessibility
-              </h3>
-              <AccessibilityControls />
-            </div>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 items-center">
+          <div className="mr-4 hidden md:flex">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background hover:bg-accent hover:text-accent-foreground h-10 py-2 px-4"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
           </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-card border-b px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          
+          <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
+            <div className="w-full flex-1 md:w-auto md:flex-none">
+              <h1 className="text-lg font-semibold">Nexus Architect - Advanced Interface</h1>
+            </div>
+            
+            {/* Voice Control Button */}
+            {userPreferences.personalization.voiceEnabled && (
               <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-md hover:bg-muted"
+                onClick={voiceListening ? stopVoiceRecognition : startVoiceRecognition}
+                className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background h-10 w-10 ${
+                  voiceListening 
+                    ? 'bg-red-500 hover:bg-red-600 text-white voice-active' 
+                    : 'hover:bg-accent hover:text-accent-foreground'
+                }`}
               >
-                <Menu className="h-5 w-5" />
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
               </button>
-              
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search or ask AI..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 w-64 border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              {/* AI Status Indicator */}
-              <div className="flex items-center space-x-2 px-3 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                <Zap className="h-4 w-4" />
-                <span className="text-sm font-medium">AI Active</span>
-              </div>
-
-              {/* Notifications */}
-              <div className="relative">
-                <button className="p-2 rounded-md hover:bg-muted relative">
-                  <Bell className="h-5 w-5" />
-                  {notifications.length > 0 && (
-                    <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* User Menu */}
-              <button className="flex items-center space-x-2 p-2 rounded-md hover:bg-muted">
-                <User className="h-5 w-5" />
-                <span className="text-sm font-medium">Admin</span>
-              </button>
-            </div>
+            )}
+            
+            {/* Theme Toggle */}
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background hover:bg-accent hover:text-accent-foreground h-10 w-10"
+            >
+              {theme === 'dark' ? (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+            </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-auto p-6">
-          <div className="animate-fade-in">
+      <div className="flex">
+        {/* Sidebar */}
+        <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-background border-r transition-transform duration-300 ease-in-out md:relative md:translate-x-0`}>
+          <div className="flex h-full flex-col">
+            <div className="flex h-14 items-center border-b px-4">
+              <h2 className="text-lg font-semibold">Navigation</h2>
+            </div>
+            <nav className="flex-1 space-y-2 p-4">
+              <a href="#dashboard" className="flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                </svg>
+                <span>Dashboard</span>
+              </a>
+              <a href="#personalization" className="flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <span>AI Personalization</span>
+              </a>
+              <a href="#visualization" className="flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                </svg>
+                <span>3D Visualization</span>
+              </a>
+              <a href="#voice" className="flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+                <span>Voice Interface</span>
+              </a>
+              <a href="#performance" className="flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>Performance</span>
+              </a>
+            </nav>
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full p-6">
             {children}
           </div>
         </main>
       </div>
 
-      {/* Sidebar Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+      {/* Voice Status Indicator */}
+      {voiceListening && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <div className="flex items-center space-x-2 rounded-lg bg-red-500 px-4 py-2 text-white shadow-lg">
+            <div className="h-2 w-2 rounded-full bg-white animate-pulse"></div>
+            <span className="text-sm font-medium">Listening...</span>
+          </div>
+        </div>
       )}
     </div>
   );

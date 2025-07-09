@@ -1,462 +1,306 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Brain,
-  TrendingUp,
-  Users,
-  Clock,
-  Target,
-  Lightbulb,
-  Activity,
-  BarChart3,
-  PieChart,
-  Zap,
-  Star,
-  ArrowUp,
-  ArrowDown,
-  Eye,
-  Heart,
-  MessageSquare,
-  Settings,
-  Sparkles,
-  Cpu,
-  Database,
-  Globe
-} from 'lucide-react';
 
 export function PersonalizationDashboard({ userPreferences, onPreferencesChange }) {
   const [aiInsights, setAiInsights] = useState([]);
-  const [userBehavior, setUserBehavior] = useState({});
+  const [userBehavior, setUserBehavior] = useState({
+    clickPatterns: [],
+    timeSpent: {},
+    preferences: {}
+  });
   const [recommendations, setRecommendations] = useState([]);
-  const [adaptiveMetrics, setAdaptiveMetrics] = useState({});
-  const [personalizedContent, setPersonalizedContent] = useState([]);
 
   useEffect(() => {
-    // Initialize AI-powered personalization data
-    initializePersonalizationData();
-    
-    // Set up real-time behavior tracking
-    const behaviorTracker = setInterval(() => {
-      updateUserBehavior();
-      generateAIInsights();
-      updateRecommendations();
-    }, 5000);
-
-    return () => clearInterval(behaviorTracker);
+    // Simulate AI-powered insights generation
+    generateAIInsights();
+    analyzeUserBehavior();
+    generateRecommendations();
   }, [userPreferences]);
 
-  const initializePersonalizationData = () => {
-    // Simulate AI-generated insights
-    setAiInsights([
+  const generateAIInsights = () => {
+    // Simulate AI analysis
+    const insights = [
       {
         id: 1,
         type: 'productivity',
-        title: 'Peak Performance Window Detected',
-        description: 'Your productivity is 35% higher between 9-11 AM. Consider scheduling important tasks during this time.',
+        title: 'Peak Productivity Hours',
+        description: 'You are most productive between 9 AM - 11 AM',
         confidence: 0.92,
-        impact: 'high',
-        actionable: true
+        action: 'Schedule important tasks during this time'
       },
       {
         id: 2,
-        type: 'workflow',
-        title: 'Workflow Optimization Opportunity',
-        description: 'Automating your data export process could save 2.5 hours per week.',
+        type: 'preference',
+        title: 'Interface Adaptation',
+        description: 'Dark mode usage increased by 40% this week',
         confidence: 0.87,
-        impact: 'medium',
-        actionable: true
+        action: 'Consider setting dark mode as default'
       },
       {
         id: 3,
-        type: 'collaboration',
-        title: 'Team Collaboration Pattern',
-        description: 'Your team responds 40% faster to visual communications than text-only messages.',
-        confidence: 0.94,
-        impact: 'medium',
-        actionable: false
+        type: 'workflow',
+        title: 'Workflow Optimization',
+        description: 'Voice commands could save 15 minutes daily',
+        confidence: 0.78,
+        action: 'Enable voice shortcuts for frequent actions'
       }
-    ]);
-
-    // Simulate user behavior analytics
-    setUserBehavior({
-      sessionDuration: 145, // minutes
-      interactionsPerHour: 42,
-      preferredFeatures: ['dashboard', 'analytics', 'reports'],
-      timeDistribution: {
-        dashboard: 35,
-        analytics: 28,
-        reports: 20,
-        settings: 10,
-        other: 7
-      },
-      engagementScore: 8.7,
-      satisfactionScore: 9.2
-    });
-
-    // Simulate AI recommendations
-    setRecommendations([
-      {
-        id: 1,
-        category: 'interface',
-        title: 'Adaptive Layout Suggestion',
-        description: 'Switch to compact view for better information density',
-        priority: 'high',
-        estimatedBenefit: '15% faster navigation',
-        action: 'apply_compact_layout'
-      },
-      {
-        id: 2,
-        category: 'workflow',
-        title: 'Smart Shortcuts',
-        description: 'Enable keyboard shortcuts for your most-used actions',
-        priority: 'medium',
-        estimatedBenefit: '25% time savings',
-        action: 'enable_shortcuts'
-      },
-      {
-        id: 3,
-        category: 'content',
-        title: 'Personalized Dashboard',
-        description: 'Customize widget order based on your usage patterns',
-        priority: 'low',
-        estimatedBenefit: '10% efficiency gain',
-        action: 'reorder_widgets'
-      }
-    ]);
-
-    // Simulate adaptive metrics
-    setAdaptiveMetrics({
-      adaptationAccuracy: 92,
-      userSatisfaction: 94,
-      timeToAdapt: 2.3, // seconds
-      improvementRate: 15, // percentage
-      learningProgress: 78
-    });
-
-    // Simulate personalized content
-    setPersonalizedContent([
-      {
-        id: 1,
-        type: 'insight',
-        title: 'Your Weekly Performance Summary',
-        content: 'You completed 23% more tasks this week compared to last week. Your focus time increased by 1.2 hours.',
-        relevanceScore: 0.95
-      },
-      {
-        id: 2,
-        type: 'tip',
-        title: 'Productivity Tip',
-        content: 'Based on your patterns, taking a 5-minute break every 45 minutes could boost your efficiency by 12%.',
-        relevanceScore: 0.88
-      },
-      {
-        id: 3,
-        type: 'update',
-        title: 'Feature Recommendation',
-        content: 'The new voice commands feature aligns with your preference for hands-free operation.',
-        relevanceScore: 0.91
-      }
-    ]);
-  };
-
-  const updateUserBehavior = () => {
-    // Simulate real-time behavior updates
-    setUserBehavior(prev => ({
-      ...prev,
-      sessionDuration: prev.sessionDuration + Math.random() * 2,
-      interactionsPerHour: prev.interactionsPerHour + Math.floor(Math.random() * 3 - 1),
-      engagementScore: Math.min(10, prev.engagementScore + (Math.random() - 0.5) * 0.1)
-    }));
-  };
-
-  const generateAIInsights = () => {
-    // Simulate AI generating new insights
-    const newInsights = [
-      'Your attention span is optimal during morning hours',
-      'Visual elements increase your task completion rate by 23%',
-      'You prefer detailed analytics over summary views',
-      'Collaborative features boost your productivity by 18%'
     ];
-
-    if (Math.random() > 0.7) {
-      const randomInsight = newInsights[Math.floor(Math.random() * newInsights.length)];
-      setAiInsights(prev => [
-        {
-          id: Date.now(),
-          type: 'behavior',
-          title: 'New Behavioral Pattern Detected',
-          description: randomInsight,
-          confidence: 0.75 + Math.random() * 0.2,
-          impact: Math.random() > 0.5 ? 'medium' : 'low',
-          actionable: Math.random() > 0.5
-        },
-        ...prev.slice(0, 4)
-      ]);
-    }
+    setAiInsights(insights);
   };
 
-  const updateRecommendations = () => {
-    // Simulate dynamic recommendation updates
-    setRecommendations(prev => 
-      prev.map(rec => ({
-        ...rec,
-        priority: Math.random() > 0.8 ? 
-          (rec.priority === 'high' ? 'medium' : rec.priority === 'medium' ? 'low' : 'high') : 
-          rec.priority
-      }))
-    );
+  const analyzeUserBehavior = () => {
+    // Simulate user behavior analysis
+    const behavior = {
+      clickPatterns: [
+        { area: 'Dashboard', frequency: 45 },
+        { area: 'Reports', frequency: 32 },
+        { area: 'Settings', frequency: 18 },
+        { area: 'Help', frequency: 5 }
+      ],
+      timeSpent: {
+        dashboard: '2h 15m',
+        reports: '1h 45m',
+        settings: '25m',
+        help: '10m'
+      },
+      preferences: {
+        theme: userPreferences.theme,
+        language: userPreferences.language,
+        voiceEnabled: userPreferences.personalization.voiceEnabled
+      }
+    };
+    setUserBehavior(behavior);
   };
 
-  const applyRecommendation = (recommendation) => {
-    console.log('Applying recommendation:', recommendation);
-    
-    switch (recommendation.action) {
-      case 'apply_compact_layout':
-        onPreferencesChange({ layout: 'compact' });
-        break;
-      case 'enable_shortcuts':
-        onPreferencesChange({ shortcuts: true });
-        break;
-      case 'reorder_widgets':
-        onPreferencesChange({ customWidgetOrder: true });
-        break;
-      default:
-        console.log('Unknown recommendation action');
-    }
-
-    // Remove applied recommendation
-    setRecommendations(prev => prev.filter(r => r.id !== recommendation.id));
+  const generateRecommendations = () => {
+    // AI-powered recommendations
+    const recs = [
+      {
+        id: 1,
+        title: 'Enable Smart Notifications',
+        description: 'Get AI-curated updates based on your work patterns',
+        impact: 'High',
+        effort: 'Low'
+      },
+      {
+        id: 2,
+        title: 'Customize Quick Actions',
+        description: 'Add frequently used functions to your toolbar',
+        impact: 'Medium',
+        effort: 'Low'
+      },
+      {
+        id: 3,
+        title: 'Voice Command Training',
+        description: 'Learn advanced voice commands for faster navigation',
+        impact: 'High',
+        effort: 'Medium'
+      }
+    ];
+    setRecommendations(recs);
   };
 
-  const MetricCard = ({ title, value, change, icon: Icon, color = 'blue' }) => (
-    <div className="bg-card rounded-lg p-6 border shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold">{value}</p>
-          {change && (
-            <div className={`flex items-center mt-1 text-sm ${
-              change > 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {change > 0 ? <ArrowUp className="h-4 w-4 mr-1" /> : <ArrowDown className="h-4 w-4 mr-1" />}
-              {Math.abs(change)}%
-            </div>
-          )}
-        </div>
-        <div className={`p-3 rounded-full bg-${color}-100 dark:bg-${color}-900`}>
-          <Icon className={`h-6 w-6 text-${color}-600 dark:text-${color}-400`} />
-        </div>
-      </div>
-    </div>
-  );
+  const handlePreferenceUpdate = (key, value) => {
+    const updatedPreferences = {
+      ...userPreferences,
+      [key]: value
+    };
+    onPreferencesChange(updatedPreferences);
+  };
 
-  const InsightCard = ({ insight }) => (
-    <div className="bg-card rounded-lg p-6 border shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center space-x-2">
-          <Brain className="h-5 w-5 text-primary" />
-          <span className="font-medium">{insight.title}</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
-            {Math.round(insight.confidence * 100)}% confidence
-          </span>
-          <span className={`text-xs px-2 py-1 rounded-full ${
-            insight.impact === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-            insight.impact === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-            'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-          }`}>
-            {insight.impact} impact
-          </span>
-        </div>
-      </div>
-      <p className="text-muted-foreground text-sm mb-3">{insight.description}</p>
-      {insight.actionable && (
-        <button className="text-primary hover:text-primary/80 text-sm font-medium">
-          Take Action →
-        </button>
-      )}
-    </div>
-  );
-
-  const RecommendationCard = ({ recommendation }) => (
-    <div className="bg-card rounded-lg p-6 border shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="font-medium">{recommendation.title}</h3>
-          <p className="text-sm text-muted-foreground mt-1">{recommendation.description}</p>
-        </div>
-        <span className={`text-xs px-2 py-1 rounded-full ${
-          recommendation.priority === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-          recommendation.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-          'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-        }`}>
-          {recommendation.priority}
-        </span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-green-600 dark:text-green-400">
-          {recommendation.estimatedBenefit}
-        </span>
-        <button
-          onClick={() => applyRecommendation(recommendation)}
-          className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  );
+  const handlePersonalizationUpdate = (key, value) => {
+    const updatedPreferences = {
+      ...userPreferences,
+      personalization: {
+        ...userPreferences.personalization,
+        [key]: value
+      }
+    };
+    onPreferencesChange(updatedPreferences);
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold gradient-text">AI-Powered Personalization</h1>
-          <p className="text-muted-foreground mt-1">
-            Intelligent insights and adaptive interface optimization
+          <h1 className="text-3xl font-bold tracking-tight">AI Personalization Dashboard</h1>
+          <p className="text-muted-foreground">
+            Intelligent insights and adaptive interface powered by machine learning
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-2 px-3 py-2 bg-green-100 dark:bg-green-900 rounded-lg">
-            <Sparkles className="h-4 w-4 text-green-600 dark:text-green-400" />
-            <span className="text-sm font-medium text-green-800 dark:text-green-200">
-              AI Learning Active
-            </span>
+          <div className="flex items-center space-x-2 rounded-lg bg-green-100 px-3 py-1 text-green-800 dark:bg-green-900 dark:text-green-200">
+            <div className="h-2 w-2 rounded-full bg-green-500"></div>
+            <span className="text-sm font-medium">AI Active</span>
           </div>
         </div>
-      </div>
-
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Adaptation Accuracy"
-          value={`${adaptiveMetrics.adaptationAccuracy}%`}
-          change={5}
-          icon={Target}
-          color="blue"
-        />
-        <MetricCard
-          title="User Satisfaction"
-          value={`${adaptiveMetrics.userSatisfaction}%`}
-          change={3}
-          icon={Heart}
-          color="green"
-        />
-        <MetricCard
-          title="Learning Progress"
-          value={`${adaptiveMetrics.learningProgress}%`}
-          change={8}
-          icon={TrendingUp}
-          color="purple"
-        />
-        <MetricCard
-          title="Engagement Score"
-          value={userBehavior.engagementScore?.toFixed(1)}
-          change={2}
-          icon={Activity}
-          color="orange"
-        />
       </div>
 
       {/* AI Insights */}
-      <div>
-        <div className="flex items-center space-x-2 mb-4">
-          <Brain className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-semibold">AI-Generated Insights</h2>
-          <span className="text-sm text-muted-foreground">
-            ({aiInsights.length} active insights)
-          </span>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {aiInsights.map(insight => (
-            <InsightCard key={insight.id} insight={insight} />
-          ))}
-        </div>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {aiInsights.map((insight) => (
+          <div key={insight.id} className="rounded-lg border bg-card p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">{insight.title}</h3>
+              <div className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                {Math.round(insight.confidence * 100)}% confident
+              </div>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{insight.description}</p>
+            <div className="mt-4">
+              <button className="text-sm font-medium text-primary hover:underline">
+                {insight.action}
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Recommendations */}
-      <div>
-        <div className="flex items-center space-x-2 mb-4">
-          <Lightbulb className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-semibold">Smart Recommendations</h2>
-          <span className="text-sm text-muted-foreground">
-            ({recommendations.length} pending)
-          </span>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {recommendations.map(recommendation => (
-            <RecommendationCard key={recommendation.id} recommendation={recommendation} />
-          ))}
-        </div>
-      </div>
-
-      {/* Behavior Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-lg p-6 border">
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
-            <BarChart3 className="h-5 w-5 mr-2 text-primary" />
-            Usage Patterns
-          </h3>
-          <div className="space-y-4">
-            {Object.entries(userBehavior.timeDistribution || {}).map(([feature, percentage]) => (
-              <div key={feature} className="flex items-center justify-between">
-                <span className="text-sm capitalize">{feature}</span>
+      {/* User Behavior Analytics */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-4">Usage Patterns</h3>
+          <div className="space-y-3">
+            {userBehavior.clickPatterns.map((pattern, index) => (
+              <div key={index} className="flex items-center justify-between">
+                <span className="text-sm">{pattern.area}</span>
                 <div className="flex items-center space-x-2">
-                  <div className="w-24 bg-muted rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${percentage}%` }}
-                    />
+                  <div className="h-2 w-20 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 rounded-full"
+                      style={{ width: `${(pattern.frequency / 50) * 100}%` }}
+                    ></div>
                   </div>
-                  <span className="text-sm text-muted-foreground w-8">{percentage}%</span>
+                  <span className="text-xs text-muted-foreground">{pattern.frequency}</span>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-card rounded-lg p-6 border">
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
-            <MessageSquare className="h-5 w-5 mr-2 text-primary" />
-            Personalized Content
-          </h3>
-          <div className="space-y-4">
-            {personalizedContent.map(content => (
-              <div key={content.id} className="border-l-4 border-primary pl-4">
-                <h4 className="font-medium text-sm">{content.title}</h4>
-                <p className="text-xs text-muted-foreground mt-1">{content.content}</p>
-                <div className="flex items-center mt-2">
-                  <Star className="h-3 w-3 text-yellow-500 mr-1" />
-                  <span className="text-xs text-muted-foreground">
-                    {Math.round(content.relevanceScore * 100)}% relevant
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-4">Time Spent</h3>
+          <div className="space-y-3">
+            {Object.entries(userBehavior.timeSpent).map(([area, time]) => (
+              <div key={area} className="flex items-center justify-between">
+                <span className="text-sm capitalize">{area}</span>
+                <span className="text-sm font-medium">{time}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Personalization Settings */}
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <h3 className="text-lg font-semibold mb-4">Personalization Settings</h3>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Theme Preference</label>
+            <select 
+              value={userPreferences.theme}
+              onChange={(e) => handlePreferenceUpdate('theme', e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="system">System</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Language</label>
+            <select 
+              value={userPreferences.language}
+              onChange={(e) => handlePreferenceUpdate('language', e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">AI Assistance</label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={userPreferences.personalization.aiAssistance}
+                onChange={(e) => handlePersonalizationUpdate('aiAssistance', e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm">Enable AI recommendations</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Voice Interface</label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={userPreferences.personalization.voiceEnabled}
+                onChange={(e) => handlePersonalizationUpdate('voiceEnabled', e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm">Enable voice commands</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Adaptive UI</label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={userPreferences.personalization.adaptiveUI}
+                onChange={(e) => handlePersonalizationUpdate('adaptiveUI', e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm">Auto-adjust interface</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Recommendations */}
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <h3 className="text-lg font-semibold mb-4">AI Recommendations</h3>
+        <div className="space-y-4">
+          {recommendations.map((rec) => (
+            <div key={rec.id} className="flex items-start justify-between rounded-lg border p-4">
+              <div className="flex-1">
+                <h4 className="font-medium">{rec.title}</h4>
+                <p className="text-sm text-muted-foreground mt-1">{rec.description}</p>
+                <div className="flex items-center space-x-4 mt-2">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    rec.impact === 'High' ? 'bg-red-100 text-red-800' :
+                    rec.impact === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {rec.impact} Impact
+                  </span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    rec.effort === 'Low' ? 'bg-green-100 text-green-800' :
+                    rec.effort === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {rec.effort} Effort
                   </span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* System Performance */}
-      <div className="bg-card rounded-lg p-6 border">
-        <h3 className="text-lg font-semibold mb-4 flex items-center">
-          <Cpu className="h-5 w-5 mr-2 text-primary" />
-          AI System Performance
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-primary">{adaptiveMetrics.timeToAdapt}s</div>
-            <div className="text-sm text-muted-foreground">Adaptation Time</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{adaptiveMetrics.improvementRate}%</div>
-            <div className="text-sm text-muted-foreground">Performance Improvement</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{userBehavior.interactionsPerHour}</div>
-            <div className="text-sm text-muted-foreground">Interactions/Hour</div>
-          </div>
+              <div className="flex space-x-2">
+                <button className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+                  Apply
+                </button>
+                <button className="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent">
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
