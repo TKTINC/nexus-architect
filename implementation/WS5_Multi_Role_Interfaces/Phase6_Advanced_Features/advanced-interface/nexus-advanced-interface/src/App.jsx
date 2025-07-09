@@ -5,11 +5,6 @@ import { AdvancedLayout } from './components/layout/AdvancedLayout';
 import { PersonalizationDashboard } from './components/personalization/PersonalizationDashboard';
 import './App.css';
 
-// Advanced Interface Components
-const ThreeDVisualization = React.lazy(() => import('./components/advanced-viz/ThreeDViewer'));
-const VoiceInterface = React.lazy(() => import('./components/voice-interface/VoiceAssistant'));
-const PerformanceMonitor = React.lazy(() => import('./components/performance/PerformanceMonitor'));
-
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [userPreferences, setUserPreferences] = useState({
@@ -63,7 +58,6 @@ function App() {
   const initializeAIModels = async () => {
     // Initialize TensorFlow.js models for personalization
     try {
-      // Load pre-trained models for user behavior prediction
       console.log('Initializing AI models for personalization...');
       // This would load actual TensorFlow.js models in production
       return Promise.resolve();
@@ -124,28 +118,19 @@ function App() {
       <Router>
         <div className="min-h-screen bg-background font-sans antialiased">
           <AdvancedLayout userPreferences={userPreferences} onPreferencesChange={updateUserPreferences}>
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
-            }>
-              <Routes>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route 
-                  path="/dashboard" 
-                  element={
-                    <PersonalizationDashboard 
-                      userPreferences={userPreferences}
-                      onPreferencesChange={updateUserPreferences}
-                    />
-                  } 
-                />
-                <Route path="/3d-visualization" element={<ThreeDVisualization />} />
-                <Route path="/voice-interface" element={<VoiceInterface />} />
-                <Route path="/performance" element={<PerformanceMonitor />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Routes>
-            </React.Suspense>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route 
+                path="/dashboard" 
+                element={
+                  <PersonalizationDashboard 
+                    userPreferences={userPreferences}
+                    onPreferencesChange={updateUserPreferences}
+                  />
+                } 
+              />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
           </AdvancedLayout>
         </div>
       </Router>

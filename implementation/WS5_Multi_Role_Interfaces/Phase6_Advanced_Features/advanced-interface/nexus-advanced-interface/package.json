@@ -27,7 +27,6 @@
     "@radix-ui/react-toast": "^1.1.5",
     "@radix-ui/react-tooltip": "^1.0.7",
     "@tensorflow/tfjs": "^4.15.0",
-    "@tensorflow/tfjs-react-native": "^0.8.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
