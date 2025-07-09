@@ -1,0 +1,336 @@
+# Nexus Architect - Redis Cluster Configuration
+# WS1 Phase 1: Caching and Session Management
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: nexus-architect
+data:
+  redis.conf: |
+    # Nexus Architect Redis Configuration
+    # Optimized for caching and session management
+    
+    # Network
+    bind 0.0.0.0
+    port 6379
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+    
+    # General
+    daemonize no
+    supervised no
+    pidfile /var/run/redis_6379.pid
+    loglevel notice
+    logfile ""
+    databases 16
+    
+    # Snapshotting
+    save 900 1
+    save 300 10
+    save 60 10000
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+    
+    # Replication
+    replica-serve-stale-data yes
+    replica-read-only yes
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-ping-replica-period 10
+    repl-timeout 60
+    repl-disable-tcp-nodelay no
+    repl-backlog-size 1mb
+    repl-backlog-ttl 3600
+    
+    # Security
+    requirepass nexus_redis_2024!
+    
+    # Memory Management
+    maxmemory 1gb
+    maxmemory-policy allkeys-lru
+    maxmemory-samples 5
+    
+    # Lazy Freeing
+    lazyfree-lazy-eviction no
+    lazyfree-lazy-expire no
+    lazyfree-lazy-server-del no
+    replica-lazy-flush no
+    
+    # Append Only Mode
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+    aof-use-rdb-preamble yes
+    
+    # Lua Scripting
+    lua-time-limit 5000
+    
+    # Slow Log
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    
+    # Latency Monitor
+    latency-monitor-threshold 100
+    
+    # Event Notification
+    notify-keyspace-events ""
+    
+    # Advanced Config
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    list-max-ziplist-size -2
+    list-compress-depth 0
+    set-max-intset-entries 512
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64
+    hll-sparse-max-bytes 3000
+    stream-node-max-bytes 4096
+    stream-node-max-entries 100
+    activerehashing yes
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit replica 256mb 64mb 60
+    client-output-buffer-limit pubsub 32mb 8mb 60
+    hz 10
+    dynamic-hz yes
+    aof-rewrite-incremental-fsync yes
+    rdb-save-incremental-fsync yes
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-credentials
+  namespace: nexus-architect
+type: Opaque
+data:
+  # nexus_redis_2024!
+  password: bmV4dXNfcmVkaXNfMjAyNCE=
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-master
+  namespace: nexus-architect
+  labels:
+    app: redis
+    role: master
+spec:
+  serviceName: redis-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      role: master
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: master
+        tier: cache
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+      - name: redis
+        image: redis:7.2.3
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - /etc/redis/redis.conf
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: password
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: redis-config
+        configMap:
+          name: redis-config
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-replica
+  namespace: nexus-architect
+  labels:
+    app: redis
+    role: replica
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: replica
+        tier: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2.3
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - /etc/redis/redis.conf
+        - --replicaof
+        - redis-master
+        - "6379"
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: password
+        volumeMounts:
+        - name: redis-config
+          mountPath: /etc/redis
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+      volumes:
+      - name: redis-config
+        configMap:
+          name: redis-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-master
+  namespace: nexus-architect
+  labels:
+    app: redis
+    role: master
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  selector:
+    app: redis
+    role: master
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-replica
+  namespace: nexus-architect
+  labels:
+    app: redis
+    role: replica
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  selector:
+    app: redis
+    role: replica
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: nexus-architect
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  selector:
+    app: redis
+

@@ -1,0 +1,385 @@
+# Nexus Architect - HashiCorp Vault Configuration
+# WS1 Phase 1: Secrets Management and Encryption
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: nexus-architect
+data:
+  vault.hcl: |
+    # Nexus Architect Vault Configuration
+    
+    ui = true
+    
+    listener "tcp" {
+      address = "0.0.0.0:8200"
+      tls_disable = 1
+      # In production, enable TLS:
+      # tls_cert_file = "/vault/tls/server.crt"
+      # tls_key_file = "/vault/tls/server.key"
+    }
+    
+    storage "postgresql" {
+      connection_url = "postgres://vault_user:vault_pass_2024!@postgresql:5432/vault?sslmode=disable"
+      table = "vault_kv_store"
+      max_parallel = "128"
+      ha_enabled = "true"
+      ha_table = "vault_ha_locks"
+    }
+    
+    seal "transit" {
+      address = "https://vault.nexus-architect.local:8200"
+      disable_renewal = "false"
+      key_name = "autounseal"
+      mount_path = "transit/"
+      tls_skip_verify = "true"
+    }
+    
+    # Cluster configuration
+    cluster_addr = "https://vault:8201"
+    api_addr = "https://vault.nexus-architect.local:8200"
+    
+    # Telemetry
+    telemetry {
+      prometheus_retention_time = "30s"
+      disable_hostname = true
+    }
+    
+    # Logging
+    log_level = "INFO"
+    log_format = "json"
+    
+    # Performance
+    default_lease_ttl = "768h"
+    max_lease_ttl = "8760h"
+    
+  vault-init.sh: |
+    #!/bin/bash
+    # Vault Initialization Script
+    
+    set -e
+    
+    echo "Waiting for Vault to be ready..."
+    until vault status > /dev/null 2>&1; do
+      sleep 5
+    done
+    
+    # Check if Vault is already initialized
+    if vault status | grep -q "Initialized.*true"; then
+      echo "Vault is already initialized"
+      exit 0
+    fi
+    
+    echo "Initializing Vault..."
+    vault operator init \
+      -key-shares=5 \
+      -key-threshold=3 \
+      -format=json > /vault/data/init-keys.json
+    
+    echo "Vault initialized successfully"
+    
+    # Extract unseal keys and root token
+    UNSEAL_KEY_1=$(cat /vault/data/init-keys.json | jq -r '.unseal_keys_b64[0]')
+    UNSEAL_KEY_2=$(cat /vault/data/init-keys.json | jq -r '.unseal_keys_b64[1]')
+    UNSEAL_KEY_3=$(cat /vault/data/init-keys.json | jq -r '.unseal_keys_b64[2]')
+    ROOT_TOKEN=$(cat /vault/data/init-keys.json | jq -r '.root_token')
+    
+    # Unseal Vault
+    echo "Unsealing Vault..."
+    vault operator unseal $UNSEAL_KEY_1
+    vault operator unseal $UNSEAL_KEY_2
+    vault operator unseal $UNSEAL_KEY_3
+    
+    # Login with root token
+    vault auth $ROOT_TOKEN
+    
+    # Enable audit logging
+    vault audit enable file file_path=/vault/logs/audit.log
+    
+    # Enable secret engines
+    vault secrets enable -path=nexus-architect kv-v2
+    vault secrets enable -path=database database
+    vault secrets enable -path=pki pki
+    vault secrets enable transit
+    
+    # Configure database secrets engine
+    vault write database/config/postgresql \
+      plugin_name=postgresql-database-plugin \
+      connection_url="postgresql://{{username}}:{{password}}@postgresql:5432/nexus_architect?sslmode=disable" \
+      allowed_roles="nexus-app-role" \
+      username="postgres" \
+      password="nexus_admin_2024!"
+    
+    # Create database role
+    vault write database/roles/nexus-app-role \
+      db_name=postgresql \
+      creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT ALL PRIVILEGES ON DATABASE nexus_architect TO \"{{name}}\";" \
+      default_ttl="1h" \
+      max_ttl="24h"
+    
+    # Configure PKI for internal certificates
+    vault secrets tune -max-lease-ttl=87600h pki
+    vault write pki/root/generate/internal \
+      common_name="Nexus Architect Internal CA" \
+      ttl=87600h
+    
+    vault write pki/config/urls \
+      issuing_certificates="https://vault.nexus-architect.local:8200/v1/pki/ca" \
+      crl_distribution_points="https://vault.nexus-architect.local:8200/v1/pki/crl"
+    
+    # Create PKI role
+    vault write pki/roles/nexus-architect \
+      allowed_domains="nexus-architect.local,nexus-architect.svc.cluster.local" \
+      allow_subdomains=true \
+      max_ttl="720h"
+    
+    # Create transit key for auto-unseal
+    vault write -f transit/keys/autounseal
+    
+    # Create policies
+    cat > /tmp/nexus-app-policy.hcl << EOF
+    # Nexus Architect Application Policy
+    
+    # Read application secrets
+    path "nexus-architect/data/*" {
+      capabilities = ["read"]
+    }
+    
+    # Generate database credentials
+    path "database/creds/nexus-app-role" {
+      capabilities = ["read"]
+    }
+    
+    # Generate certificates
+    path "pki/issue/nexus-architect" {
+      capabilities = ["create", "update"]
+    }
+    
+    # Encrypt/decrypt data
+    path "transit/encrypt/nexus-architect" {
+      capabilities = ["create", "update"]
+    }
+    
+    path "transit/decrypt/nexus-architect" {
+      capabilities = ["create", "update"]
+    }
+    EOF
+    
+    vault policy write nexus-app-policy /tmp/nexus-app-policy.hcl
+    
+    # Enable Kubernetes auth
+    vault auth enable kubernetes
+    
+    vault write auth/kubernetes/config \
+      token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+      kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443" \
+      kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    
+    # Create Kubernetes auth role
+    vault write auth/kubernetes/role/nexus-architect \
+      bound_service_account_names=nexus-architect \
+      bound_service_account_namespaces=nexus-architect \
+      policies=nexus-app-policy \
+      ttl=1h
+    
+    echo "Vault configuration completed successfully"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: nexus-architect
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: vault
+  namespace: nexus-architect
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vault
+  namespace: nexus-architect
+  labels:
+    app: vault
+spec:
+  serviceName: vault
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+        tier: security
+    spec:
+      serviceAccountName: vault
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: vault
+        image: hashicorp/vault:1.15.4
+        ports:
+        - containerPort: 8200
+          name: vault-port
+        - containerPort: 8201
+          name: cluster-port
+        env:
+        - name: VAULT_ADDR
+          value: "http://127.0.0.1:8200"
+        - name: VAULT_API_ADDR
+          value: "https://vault.nexus-architect.local:8200"
+        - name: VAULT_CLUSTER_ADDR
+          value: "https://$(POD_IP):8201"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: VAULT_LOG_LEVEL
+          value: "INFO"
+        - name: VAULT_LOG_FORMAT
+          value: "json"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          cp /vault/config/vault.hcl /tmp/vault.hcl
+          vault server -config=/tmp/vault.hcl
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-data
+          mountPath: /vault/data
+        - name: vault-logs
+          mountPath: /vault/logs
+        livenessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true
+            port: 8200
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+            port: 8200
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+  volumeClaimTemplates:
+  - metadata:
+      name: vault-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: vault-logs
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: nexus-architect
+  labels:
+    app: vault
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 8200
+    targetPort: 8200
+    name: vault-port
+  - port: 8201
+    targetPort: 8201
+    name: cluster-port
+  selector:
+    app: vault
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-active
+  namespace: nexus-architect
+  labels:
+    app: vault
+    service: active
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8200
+    targetPort: 8200
+    name: vault-port
+  selector:
+    app: vault
+
+---
+# Vault Initialization Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init
+  namespace: nexus-architect
+spec:
+  template:
+    spec:
+      serviceAccountName: vault
+      restartPolicy: OnFailure
+      containers:
+      - name: vault-init
+        image: hashicorp/vault:1.15.4
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault:8200"
+        command:
+        - /bin/sh
+        - /vault/config/vault-init.sh
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-data
+          mountPath: /vault/data
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+          defaultMode: 0755
+      - name: vault-data
+        emptyDir: {}
+

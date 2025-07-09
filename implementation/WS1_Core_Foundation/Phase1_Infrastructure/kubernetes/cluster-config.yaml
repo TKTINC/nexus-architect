@@ -1,0 +1,93 @@
+# Nexus Architect - Kubernetes Cluster Configuration
+# WS1 Phase 1: Infrastructure Foundation and Basic Security
+
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+metadata:
+  name: nexus-architect-cluster
+kubernetesVersion: v1.28.4
+clusterName: nexus-architect
+controlPlaneEndpoint: "nexus-control-plane.local:6443"
+networking:
+  serviceSubnet: "10.96.0.0/12"
+  podSubnet: "10.244.0.0/16"
+  dnsDomain: "cluster.local"
+apiServer:
+  extraArgs:
+    audit-log-maxage: "30"
+    audit-log-maxbackup: "3"
+    audit-log-maxsize: "100"
+    audit-log-path: "/var/log/audit.log"
+    enable-admission-plugins: "NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerationSeconds,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,ResourceQuota,NodeRestriction,PodSecurityPolicy"
+  certSANs:
+    - "nexus-control-plane.local"
+    - "127.0.0.1"
+    - "localhost"
+controllerManager:
+  extraArgs:
+    bind-address: "0.0.0.0"
+    secure-port: "10257"
+scheduler:
+  extraArgs:
+    bind-address: "0.0.0.0"
+    secure-port: "10259"
+etcd:
+  local:
+    extraArgs:
+      listen-metrics-urls: "http://0.0.0.0:2381"
+
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+metadata:
+  name: nexus-architect-init
+localAPIEndpoint:
+  advertiseAddress: "0.0.0.0"
+  bindPort: 6443
+nodeRegistration:
+  criSocket: "unix:///var/run/containerd/containerd.sock"
+  kubeletExtraArgs:
+    cgroup-driver: "systemd"
+    container-runtime: "remote"
+    container-runtime-endpoint: "unix:///var/run/containerd/containerd.sock"
+
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+metadata:
+  name: nexus-architect-kubelet
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    enabled: true
+authorization:
+  mode: Webhook
+cgroupDriver: systemd
+clusterDNS:
+  - "10.96.0.10"
+clusterDomain: "cluster.local"
+containerRuntimeEndpoint: "unix:///var/run/containerd/containerd.sock"
+failSwapOn: false
+healthzBindAddress: "127.0.0.1"
+healthzPort: 10248
+rotateCertificates: true
+serverTLSBootstrap: true
+staticPodPath: "/etc/kubernetes/manifests"
+
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+metadata:
+  name: nexus-architect-proxy
+bindAddress: "0.0.0.0"
+clientConnection:
+  kubeconfig: "/var/lib/kube-proxy/kubeconfig.conf"
+clusterCIDR: "10.244.0.0/16"
+mode: "iptables"
+iptables:
+  masqueradeAll: false
+  masqueradeBit: 14
+  minSyncPeriod: 0s
+  syncPeriod: 30s
+

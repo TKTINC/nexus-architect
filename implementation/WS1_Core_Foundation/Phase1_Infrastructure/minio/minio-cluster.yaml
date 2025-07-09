@@ -1,0 +1,275 @@
+# Nexus Architect - MinIO Object Storage Configuration
+# WS1 Phase 1: Object Storage for Files and AI Models
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-credentials
+  namespace: nexus-architect
+type: Opaque
+data:
+  # minioadmin / nexus_minio_2024!
+  access-key: bWluaW9hZG1pbg==
+  secret-key: bmV4dXNfbWluaW9fMjAyNCE=
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minio-config
+  namespace: nexus-architect
+data:
+  config.env: |
+    # MinIO Configuration for Nexus Architect
+    MINIO_ROOT_USER=minioadmin
+    MINIO_ROOT_PASSWORD=nexus_minio_2024!
+    MINIO_REGION_NAME=us-east-1
+    MINIO_BROWSER=on
+    MINIO_DOMAIN=minio.nexus-architect.local
+    MINIO_SERVER_URL=https://minio.nexus-architect.local
+    MINIO_BROWSER_REDIRECT_URL=https://console.nexus-architect.local
+    
+    # Security Settings
+    MINIO_IDENTITY_OPENID_CONFIG_URL=https://keycloak.nexus-architect.local/auth/realms/nexus/.well-known/openid_configuration
+    MINIO_IDENTITY_OPENID_CLIENT_ID=minio
+    MINIO_IDENTITY_OPENID_CLIENT_SECRET=minio-client-secret
+    MINIO_IDENTITY_OPENID_CLAIM_NAME=policy
+    MINIO_IDENTITY_OPENID_SCOPES=openid,profile,email
+    
+    # Performance Settings
+    MINIO_API_REQUESTS_MAX=10000
+    MINIO_API_REQUESTS_DEADLINE=10s
+    MINIO_API_CLUSTER_DEADLINE=10s
+    MINIO_API_CORS_ALLOW_ORIGIN=*
+    
+    # Compression
+    MINIO_COMPRESS=on
+    MINIO_COMPRESS_EXTENSIONS=.txt,.log,.csv,.json,.tar,.xml,.bin
+    MINIO_COMPRESS_MIME_TYPES=text/*,application/json,application/xml
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: nexus-architect
+  labels:
+    app: minio
+spec:
+  serviceName: minio
+  replicas: 4
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+        tier: storage
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+      - name: minio
+        image: minio/minio:RELEASE.2023-12-07T04-16-00Z
+        args:
+        - server
+        - --console-address
+        - ":9001"
+        - http://minio-{0...3}.minio.nexus-architect.svc.cluster.local/data
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: access-key
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: secret-key
+        envFrom:
+        - configMapRef:
+            name: minio-config
+        volumeMounts:
+        - name: minio-data
+          mountPath: /data
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 20
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+  volumeClaimTemplates:
+  - metadata:
+      name: minio-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: nexus-architect
+  labels:
+    app: minio
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 9000
+    targetPort: 9000
+    name: api
+  - port: 9001
+    targetPort: 9001
+    name: console
+  selector:
+    app: minio
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-api
+  namespace: nexus-architect
+  labels:
+    app: minio
+    service: api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9000
+    targetPort: 9000
+    name: api
+  selector:
+    app: minio
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-console
+  namespace: nexus-architect
+  labels:
+    app: minio
+    service: console
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9001
+    targetPort: 9001
+    name: console
+  selector:
+    app: minio
+
+---
+# MinIO Client Job for Initial Setup
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-setup
+  namespace: nexus-architect
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: mc
+        image: minio/mc:RELEASE.2023-11-20T16-30-59Z
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Wait for MinIO to be ready
+          until mc alias set nexus http://minio-api:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do
+            echo "Waiting for MinIO to be ready..."
+            sleep 5
+          done
+          
+          # Create buckets
+          mc mb nexus/nexus-architect-data --ignore-existing
+          mc mb nexus/nexus-architect-models --ignore-existing
+          mc mb nexus/nexus-architect-documents --ignore-existing
+          mc mb nexus/nexus-architect-backups --ignore-existing
+          mc mb nexus/nexus-architect-logs --ignore-existing
+          
+          # Set bucket policies
+          mc anonymous set download nexus/nexus-architect-data
+          mc anonymous set none nexus/nexus-architect-models
+          mc anonymous set none nexus/nexus-architect-documents
+          mc anonymous set none nexus/nexus-architect-backups
+          mc anonymous set none nexus/nexus-architect-logs
+          
+          # Enable versioning
+          mc version enable nexus/nexus-architect-data
+          mc version enable nexus/nexus-architect-models
+          mc version enable nexus/nexus-architect-documents
+          mc version enable nexus/nexus-architect-backups
+          
+          # Set lifecycle policies
+          cat > /tmp/lifecycle.json << EOF
+          {
+            "Rules": [
+              {
+                "ID": "DeleteOldVersions",
+                "Status": "Enabled",
+                "Filter": {"Prefix": ""},
+                "NoncurrentVersionExpiration": {"NoncurrentDays": 30}
+              },
+              {
+                "ID": "DeleteIncompleteUploads",
+                "Status": "Enabled",
+                "Filter": {"Prefix": ""},
+                "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+              }
+            ]
+          }
+          EOF
+          
+          mc ilm import nexus/nexus-architect-data < /tmp/lifecycle.json
+          mc ilm import nexus/nexus-architect-models < /tmp/lifecycle.json
+          mc ilm import nexus/nexus-architect-documents < /tmp/lifecycle.json
+          
+          echo "MinIO setup completed successfully"
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: access-key
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: secret-key
+
