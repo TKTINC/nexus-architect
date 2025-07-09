@@ -1,0 +1,514 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-ai
+  labels:
+    name: nexus-ai
+    app.kubernetes.io/name: nexus-architect
+    app.kubernetes.io/component: ai-services
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: torchserve-config
+  namespace: nexus-ai
+data:
+  config.properties: |
+    # TorchServe Configuration for Nexus Architect
+    inference_address=http://0.0.0.0:8080
+    management_address=http://0.0.0.0:8081
+    metrics_address=http://0.0.0.0:8082
+    grpc_inference_port=7070
+    grpc_management_port=7071
+    
+    # Model Store Configuration
+    model_store=/home/model-server/model-store
+    load_models=all
+    
+    # Performance Configuration
+    number_of_netty_threads=4
+    netty_client_threads=0
+    default_workers_per_model=2
+    max_workers=8
+    max_request_size=6553500
+    max_response_size=6553500
+    
+    # GPU Configuration
+    number_of_gpu=1
+    gpu_memory_fraction=0.8
+    
+    # Logging Configuration
+    default_service_handler=com.amazonaws.ml.mms.service.ModelServiceHandler
+    service_envelope=json
+    
+    # Security Configuration
+    keystore=src/test/resources/keystore.p12
+    keystore_pass=changeit
+    keystore_type=PKCS12
+    
+    # Metrics Configuration
+    metrics_format=prometheus
+    metrics_config_file=/home/model-server/config/metrics.yaml
+    
+    # Model Configuration
+    model_config_file=/home/model-server/config/model_config.yaml
+    
+    # Workflow Configuration
+    workflow_store=/home/model-server/workflow-store
+    
+    # CORS Configuration
+    cors_allowed_origin=*
+    cors_allowed_methods=GET,POST,PUT,DELETE
+    cors_allowed_headers=*
+  
+  metrics.yaml: |
+    # Prometheus Metrics Configuration
+    dimensions:
+      - ModelName
+      - Level
+    
+    ts_metrics:
+      counter:
+        - Requests2XX
+        - Requests4XX
+        - Requests5XX
+        - RequestsTotal
+      histogram:
+        - RequestLatency
+        - QueueTime
+        - WorkerThreadTime
+        - WorkerLoadTime
+        - WorkerInitTime
+      gauge:
+        - QueueSize
+        - WorkerThreads
+        - CPUUtilization
+        - MemoryUtilization
+        - GPUUtilization
+        - GPUMemoryUtilization
+        - DiskAvailable
+        - DiskUsage
+        - DiskUtilization
+    
+    model_metrics:
+      counter:
+        - InferenceRequestCount
+        - InitializeCallCount
+        - PreprocessCallCount
+        - PostprocessCallCount
+        - PredictionTime
+      histogram:
+        - HandlerTime
+        - PredictionTime
+      gauge:
+        - ModelLoadTime
+        - ModelMemoryUsage
+        - ModelCPUUsage
+        - ModelGPUUsage
+  
+  model_config.yaml: |
+    # Model Configuration for Nexus Architect
+    models:
+      - name: "nexus-general-chat"
+        version: "1.0"
+        url: "nexus-general-chat.mar"
+        initial_workers: 2
+        max_workers: 4
+        batch_size: 8
+        max_batch_delay: 100
+        response_timeout: 120
+        device_type: "gpu"
+        device_ids: [0]
+        handler: "nexus_handlers.general_chat_handler"
+        envelope: "json"
+        
+      - name: "nexus-code-assistant"
+        version: "1.0"
+        url: "nexus-code-assistant.mar"
+        initial_workers: 1
+        max_workers: 2
+        batch_size: 4
+        max_batch_delay: 200
+        response_timeout: 180
+        device_type: "gpu"
+        device_ids: [0]
+        handler: "nexus_handlers.code_assistant_handler"
+        envelope: "json"
+        
+      - name: "nexus-security-advisor"
+        version: "1.0"
+        url: "nexus-security-advisor.mar"
+        initial_workers: 1
+        max_workers: 3
+        batch_size: 6
+        max_batch_delay: 150
+        response_timeout: 90
+        device_type: "gpu"
+        device_ids: [0]
+        handler: "nexus_handlers.security_advisor_handler"
+        envelope: "json"
+        
+      - name: "nexus-performance-optimizer"
+        version: "1.0"
+        url: "nexus-performance-optimizer.mar"
+        initial_workers: 1
+        max_workers: 2
+        batch_size: 4
+        max_batch_delay: 100
+        response_timeout: 120
+        device_type: "gpu"
+        device_ids: [0]
+        handler: "nexus_handlers.performance_optimizer_handler"
+        envelope: "json"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: torchserve-deployment
+  namespace: nexus-ai
+  labels:
+    app: torchserve
+    component: model-serving
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: torchserve
+  template:
+    metadata:
+      labels:
+        app: torchserve
+        component: model-serving
+    spec:
+      serviceAccountName: nexus-ai
+      containers:
+      - name: torchserve
+        image: pytorch/torchserve:latest-gpu
+        ports:
+        - name: inference
+          containerPort: 8080
+        - name: management
+          containerPort: 8081
+        - name: metrics
+          containerPort: 8082
+        - name: grpc-inference
+          containerPort: 7070
+        - name: grpc-management
+          containerPort: 7071
+        env:
+        - name: TS_CONFIG_FILE
+          value: "/home/model-server/config/config.properties"
+        - name: TS_MODEL_CONFIG_FILE
+          value: "/home/model-server/config/model_config.yaml"
+        - name: TS_METRICS_CONFIG_FILE
+          value: "/home/model-server/config/metrics.yaml"
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /home/model-server/config
+        - name: model-store
+          mountPath: /home/model-server/model-store
+        - name: workflow-store
+          mountPath: /home/model-server/workflow-store
+        - name: tmp-volume
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+      volumes:
+      - name: config-volume
+        configMap:
+          name: torchserve-config
+      - name: model-store
+        persistentVolumeClaim:
+          claimName: torchserve-model-store
+      - name: workflow-store
+        persistentVolumeClaim:
+          claimName: torchserve-workflow-store
+      - name: tmp-volume
+        emptyDir: {}
+      nodeSelector:
+        accelerator: nvidia-tesla-t4
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: torchserve-service
+  namespace: nexus-ai
+  labels:
+    app: torchserve
+    component: model-serving
+spec:
+  type: ClusterIP
+  ports:
+  - name: inference
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: management
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  - name: metrics
+    port: 8082
+    targetPort: 8082
+    protocol: TCP
+  - name: grpc-inference
+    port: 7070
+    targetPort: 7070
+    protocol: TCP
+  - name: grpc-management
+    port: 7071
+    targetPort: 7071
+    protocol: TCP
+  selector:
+    app: torchserve
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: torchserve-model-store
+  namespace: nexus-ai
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: torchserve-workflow-store
+  namespace: nexus-ai
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: torchserve-hpa
+  namespace: nexus-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: torchserve-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: inference_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-ai
+  namespace: nexus-ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: nexus-ai
+  name: nexus-ai-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nexus-ai-rolebinding
+  namespace: nexus-ai
+subjects:
+- kind: ServiceAccount
+  name: nexus-ai
+  namespace: nexus-ai
+roleRef:
+  kind: Role
+  name: nexus-ai-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: torchserve-vs
+  namespace: nexus-ai
+spec:
+  hosts:
+  - torchserve-service
+  http:
+  - match:
+    - uri:
+        prefix: /predictions
+    route:
+    - destination:
+        host: torchserve-service
+        port:
+          number: 8080
+    timeout: 120s
+    retries:
+      attempts: 3
+      perTryTimeout: 40s
+  - match:
+    - uri:
+        prefix: /models
+    route:
+    - destination:
+        host: torchserve-service
+        port:
+          number: 8081
+    timeout: 60s
+  - match:
+    - uri:
+        prefix: /metrics
+    route:
+    - destination:
+        host: torchserve-service
+        port:
+          number: 8082
+    timeout: 30s
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: torchserve-dr
+  namespace: nexus-ai
+spec:
+  host: torchserve-service
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+        tcpKeepalive:
+          time: 7200s
+          interval: 75s
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: torchserve-authz
+  namespace: nexus-ai
+spec:
+  selector:
+    matchLabels:
+      app: torchserve
+  rules:
+  - from:
+    - source:
+        namespaces: ["nexus-api", "nexus-gateway"]
+    to:
+    - operation:
+        ports: ["8080", "8081"]
+  - from:
+    - source:
+        namespaces: ["nexus-infrastructure"]
+    to:
+    - operation:
+        ports: ["8082"]
+        paths: ["/metrics"]
+

@@ -1,0 +1,1061 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knowledge-pipeline-config
+  namespace: nexus-ai
+data:
+  pipeline_config.yaml: |
+    # Knowledge Processing Pipeline Configuration
+    pipeline:
+      name: "nexus-knowledge-pipeline"
+      version: "1.0.0"
+      description: "Automated knowledge processing and ingestion pipeline"
+      
+    stages:
+      document_ingestion:
+        enabled: true
+        input_sources:
+          - type: "file_upload"
+            formats: ["pdf", "docx", "txt", "md", "html"]
+            max_size_mb: 100
+          - type: "web_scraping"
+            allowed_domains: ["docs.nexus-architect.local"]
+            rate_limit: 10
+          - type: "api_integration"
+            endpoints: ["confluence", "notion", "github"]
+        
+      preprocessing:
+        enabled: true
+        steps:
+          - name: "text_extraction"
+            processors: ["pdfplumber", "python-docx", "beautifulsoup4"]
+          - name: "text_cleaning"
+            operations: ["remove_headers_footers", "normalize_whitespace", "remove_special_chars"]
+          - name: "language_detection"
+            supported_languages: ["en", "es", "fr", "de", "zh", "ja"]
+          - name: "content_filtering"
+            filters: ["remove_boilerplate", "filter_low_quality", "deduplicate"]
+        
+      chunking:
+        enabled: true
+        strategies:
+          - name: "semantic_chunking"
+            method: "sentence_transformers"
+            chunk_size: 512
+            overlap: 50
+            min_chunk_size: 100
+          - name: "hierarchical_chunking"
+            levels: ["document", "section", "paragraph", "sentence"]
+            preserve_structure: true
+          - name: "sliding_window"
+            window_size: 1000
+            step_size: 500
+            
+      embedding_generation:
+        enabled: true
+        models:
+          primary:
+            provider: "openai"
+            model: "text-embedding-ada-002"
+            dimensions: 1536
+          fallback:
+            provider: "huggingface"
+            model: "sentence-transformers/all-MiniLM-L6-v2"
+            dimensions: 384
+        batch_size: 100
+        
+      knowledge_graph:
+        enabled: true
+        entity_extraction:
+          models: ["spacy_en_core_web_sm", "transformers_ner"]
+          entity_types: ["PERSON", "ORG", "GPE", "PRODUCT", "EVENT", "CONCEPT"]
+        relationship_extraction:
+          methods: ["dependency_parsing", "pattern_matching", "ml_classification"]
+          confidence_threshold: 0.7
+        graph_storage:
+          backend: "neo4j"
+          connection: "bolt://neo4j.nexus-ai:7687"
+          
+      vector_storage:
+        enabled: true
+        primary_store:
+          backend: "weaviate"
+          connection: "http://weaviate.nexus-ai:8080"
+          index_config:
+            distance_metric: "cosine"
+            ef_construction: 128
+            max_connections: 64
+        backup_store:
+          backend: "pinecone"
+          api_key_secret: "pinecone-api-key"
+          environment: "us-west1-gcp"
+          
+      quality_assurance:
+        enabled: true
+        checks:
+          - name: "embedding_quality"
+            metrics: ["cosine_similarity", "cluster_coherence"]
+            thresholds: {"min_similarity": 0.3, "max_similarity": 0.95}
+          - name: "content_completeness"
+            checks: ["missing_sections", "truncated_content"]
+          - name: "metadata_validation"
+            required_fields: ["source", "timestamp", "content_type", "language"]
+            
+    monitoring:
+      metrics:
+        - "documents_processed_total"
+        - "processing_duration_seconds"
+        - "embedding_generation_duration"
+        - "storage_operations_total"
+        - "quality_score_distribution"
+      alerts:
+        - name: "processing_failure_rate"
+          condition: "failure_rate > 0.05"
+          severity: "warning"
+        - name: "storage_capacity"
+          condition: "storage_usage > 0.8"
+          severity: "critical"
+          
+    retry_policy:
+      max_retries: 3
+      backoff_strategy: "exponential"
+      base_delay_seconds: 1
+      max_delay_seconds: 60
+      
+    security:
+      data_classification:
+        levels: ["public", "internal", "confidential", "restricted"]
+        default_level: "internal"
+      access_control:
+        rbac_enabled: true
+        encryption_at_rest: true
+        encryption_in_transit: true
+      audit_logging:
+        enabled: true
+        log_level: "INFO"
+        retention_days: 90
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge-pipeline
+  namespace: nexus-ai
+  labels:
+    app: knowledge-pipeline
+    component: knowledge-processing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: knowledge-pipeline
+  template:
+    metadata:
+      labels:
+        app: knowledge-pipeline
+        component: knowledge-processing
+    spec:
+      serviceAccountName: nexus-ai
+      containers:
+      - name: knowledge-processor
+        image: python:3.11-slim
+        ports:
+        - name: http
+          containerPort: 8083
+        - name: metrics
+          containerPort: 9091
+        env:
+        - name: PIPELINE_CONFIG_PATH
+          value: "/app/config/pipeline_config.yaml"
+        - name: WEAVIATE_URL
+          value: "http://weaviate.nexus-ai:8080"
+        - name: NEO4J_URL
+          value: "bolt://neo4j.nexus-ai:7687"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-provider-secrets
+              key: openai-api-key
+        - name: HUGGINGFACE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-provider-secrets
+              key: huggingface-api-key
+              optional: true
+        - name: NEO4J_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: neo4j-secrets
+              key: username
+        - name: NEO4J_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: neo4j-secrets
+              key: password
+        - name: MINIO_ENDPOINT
+          value: "minio.nexus-infrastructure:9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-secrets
+              key: access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-secrets
+              key: secret-key
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        - name: temp-storage
+          mountPath: /tmp/processing
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install required packages
+          pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic requests \
+                     weaviate-client neo4j openai transformers sentence-transformers \
+                     spacy beautifulsoup4 pdfplumber python-docx markdown \
+                     prometheus-client celery redis langchain tiktoken \
+                     minio boto3 pandas numpy scikit-learn nltk
+          
+          # Download spaCy model
+          python -m spacy download en_core_web_sm
+          
+          # Create knowledge processing service
+          cat > /app/knowledge_processor.py <<'EOF'
+          """
+          Knowledge Processing Pipeline Service
+          Automated document ingestion, processing, and knowledge extraction
+          """
+          
+          import os
+          import json
+          import logging
+          import asyncio
+          import hashlib
+          import mimetypes
+          from datetime import datetime, timedelta
+          from typing import List, Dict, Any, Optional, Union
+          from enum import Enum
+          import tempfile
+          import shutil
+          from pathlib import Path
+          
+          from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+          from pydantic import BaseModel, Field
+          import requests
+          import aiohttp
+          from prometheus_client import Counter, Histogram, Gauge, start_http_server
+          
+          # Document processing imports
+          import pdfplumber
+          from docx import Document
+          from bs4 import BeautifulSoup
+          import markdown
+          
+          # ML and NLP imports
+          import spacy
+          from transformers import pipeline, AutoTokenizer, AutoModel
+          from sentence_transformers import SentenceTransformer
+          import openai
+          import tiktoken
+          
+          # Vector database and graph database imports
+          import weaviate
+          from neo4j import GraphDatabase
+          
+          # Storage imports
+          from minio import Minio
+          import boto3
+          
+          # Data processing imports
+          import pandas as pd
+          import numpy as np
+          from sklearn.cluster import KMeans
+          from sklearn.metrics.pairwise import cosine_similarity
+          import nltk
+          
+          # Configure logging
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          # Prometheus metrics
+          documents_processed = Counter('documents_processed_total', 'Total documents processed', ['status', 'content_type'])
+          processing_duration = Histogram('processing_duration_seconds', 'Time spent processing documents')
+          embedding_generation_duration = Histogram('embedding_generation_duration_seconds', 'Time spent generating embeddings')
+          storage_operations = Counter('storage_operations_total', 'Total storage operations', ['operation', 'backend'])
+          quality_scores = Histogram('quality_score_distribution', 'Distribution of content quality scores')
+          
+          # Initialize components
+          app = FastAPI(
+              title="Knowledge Processing Pipeline",
+              description="Automated document processing and knowledge extraction",
+              version="1.0.0"
+          )
+          
+          # Load configuration
+          PIPELINE_CONFIG_PATH = os.getenv("PIPELINE_CONFIG_PATH", "/app/config/pipeline_config.yaml")
+          WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://weaviate.nexus-ai:8080")
+          NEO4J_URL = os.getenv("NEO4J_URL", "bolt://neo4j.nexus-ai:7687")
+          OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+          
+          class ContentType(str, Enum):
+              PDF = "pdf"
+              DOCX = "docx"
+              TXT = "txt"
+              MD = "md"
+              HTML = "html"
+              WEB = "web"
+          
+          class ProcessingStatus(str, Enum):
+              PENDING = "pending"
+              PROCESSING = "processing"
+              COMPLETED = "completed"
+              FAILED = "failed"
+          
+          class DataClassification(str, Enum):
+              PUBLIC = "public"
+              INTERNAL = "internal"
+              CONFIDENTIAL = "confidential"
+              RESTRICTED = "restricted"
+          
+          class DocumentMetadata(BaseModel):
+              source: str
+              content_type: ContentType
+              language: str = "en"
+              classification: DataClassification = DataClassification.INTERNAL
+              tags: List[str] = []
+              author: Optional[str] = None
+              created_at: Optional[datetime] = None
+              file_size: Optional[int] = None
+              checksum: Optional[str] = None
+          
+          class ProcessingRequest(BaseModel):
+              content: Optional[str] = None
+              url: Optional[str] = None
+              metadata: DocumentMetadata
+              processing_options: Dict[str, Any] = {}
+          
+          class ProcessingResult(BaseModel):
+              document_id: str
+              status: ProcessingStatus
+              metadata: DocumentMetadata
+              chunks: List[Dict[str, Any]] = []
+              entities: List[Dict[str, Any]] = []
+              relationships: List[Dict[str, Any]] = []
+              embeddings_count: int = 0
+              quality_score: float = 0.0
+              processing_time: float = 0.0
+              error_message: Optional[str] = None
+          
+          class KnowledgeProcessor:
+              def __init__(self):
+                  self.weaviate_client = None
+                  self.neo4j_driver = None
+                  self.embedding_model = None
+                  self.nlp_model = None
+                  self.ner_pipeline = None
+                  self.minio_client = None
+                  self.initialize_components()
+              
+              def initialize_components(self):
+                  """Initialize all processing components"""
+                  try:
+                      # Initialize Weaviate client
+                      self.weaviate_client = weaviate.Client(WEAVIATE_URL)
+                      
+                      # Initialize Neo4j driver
+                      neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
+                      neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+                      self.neo4j_driver = GraphDatabase.driver(
+                          NEO4J_URL, 
+                          auth=(neo4j_username, neo4j_password)
+                      )
+                      
+                      # Initialize embedding model
+                      self.embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+                      
+                      # Initialize spaCy model
+                      self.nlp_model = spacy.load("en_core_web_sm")
+                      
+                      # Initialize NER pipeline
+                      self.ner_pipeline = pipeline(
+                          "ner", 
+                          model="dbmdz/bert-large-cased-finetuned-conll03-english",
+                          aggregation_strategy="simple"
+                      )
+                      
+                      # Initialize MinIO client
+                      minio_endpoint = os.getenv("MINIO_ENDPOINT", "minio.nexus-infrastructure:9000")
+                      minio_access_key = os.getenv("MINIO_ACCESS_KEY")
+                      minio_secret_key = os.getenv("MINIO_SECRET_KEY")
+                      
+                      if minio_access_key and minio_secret_key:
+                          self.minio_client = Minio(
+                              minio_endpoint,
+                              access_key=minio_access_key,
+                              secret_key=minio_secret_key,
+                              secure=False
+                          )
+                      
+                      # Initialize OpenAI
+                      if OPENAI_API_KEY:
+                          openai.api_key = OPENAI_API_KEY
+                      
+                      logger.info("Knowledge processor components initialized successfully")
+                      
+                  except Exception as e:
+                      logger.error(f"Failed to initialize components: {e}")
+                      raise
+              
+              async def process_document(self, request: ProcessingRequest) -> ProcessingResult:
+                  """Process a document through the complete pipeline"""
+                  start_time = datetime.utcnow()
+                  document_id = self.generate_document_id(request)
+                  
+                  try:
+                      with processing_duration.time():
+                          # Step 1: Extract content
+                          content = await self.extract_content(request)
+                          
+                          # Step 2: Preprocess content
+                          processed_content = await self.preprocess_content(content, request.metadata)
+                          
+                          # Step 3: Chunk content
+                          chunks = await self.chunk_content(processed_content, request.processing_options)
+                          
+                          # Step 4: Generate embeddings
+                          embeddings = await self.generate_embeddings(chunks)
+                          
+                          # Step 5: Extract entities and relationships
+                          entities, relationships = await self.extract_knowledge(processed_content)
+                          
+                          # Step 6: Store in vector database
+                          await self.store_vectors(document_id, chunks, embeddings, request.metadata)
+                          
+                          # Step 7: Store in knowledge graph
+                          await self.store_knowledge_graph(document_id, entities, relationships)
+                          
+                          # Step 8: Calculate quality score
+                          quality_score = await self.calculate_quality_score(processed_content, chunks, entities)
+                          
+                          processing_time = (datetime.utcnow() - start_time).total_seconds()
+                          
+                          # Update metrics
+                          documents_processed.labels(
+                              status="completed", 
+                              content_type=request.metadata.content_type
+                          ).inc()
+                          quality_scores.observe(quality_score)
+                          
+                          return ProcessingResult(
+                              document_id=document_id,
+                              status=ProcessingStatus.COMPLETED,
+                              metadata=request.metadata,
+                              chunks=[{"id": i, "content": chunk, "embedding_id": f"{document_id}_{i}"} 
+                                     for i, chunk in enumerate(chunks)],
+                              entities=entities,
+                              relationships=relationships,
+                              embeddings_count=len(embeddings),
+                              quality_score=quality_score,
+                              processing_time=processing_time
+                          )
+                          
+                  except Exception as e:
+                      logger.error(f"Failed to process document {document_id}: {e}")
+                      documents_processed.labels(
+                          status="failed", 
+                          content_type=request.metadata.content_type
+                      ).inc()
+                      
+                      return ProcessingResult(
+                          document_id=document_id,
+                          status=ProcessingStatus.FAILED,
+                          metadata=request.metadata,
+                          error_message=str(e),
+                          processing_time=(datetime.utcnow() - start_time).total_seconds()
+                      )
+              
+              def generate_document_id(self, request: ProcessingRequest) -> str:
+                  """Generate unique document ID"""
+                  content_hash = hashlib.md5(
+                      (request.content or request.url or "").encode()
+                  ).hexdigest()
+                  timestamp = int(datetime.utcnow().timestamp())
+                  return f"doc_{timestamp}_{content_hash[:8]}"
+              
+              async def extract_content(self, request: ProcessingRequest) -> str:
+                  """Extract text content from various sources"""
+                  if request.content:
+                      return request.content
+                  
+                  if request.url:
+                      return await self.extract_from_url(request.url)
+                  
+                  raise ValueError("No content or URL provided")
+              
+              async def extract_from_url(self, url: str) -> str:
+                  """Extract content from URL"""
+                  async with aiohttp.ClientSession() as session:
+                      async with session.get(url) as response:
+                          if response.status == 200:
+                              content = await response.text()
+                              soup = BeautifulSoup(content, 'html.parser')
+                              return soup.get_text()
+                          else:
+                              raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {url}")
+              
+              async def extract_from_file(self, file: UploadFile) -> str:
+                  """Extract text from uploaded file"""
+                  content_type = file.content_type or mimetypes.guess_type(file.filename)[0]
+                  
+                  with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                      shutil.copyfileobj(file.file, temp_file)
+                      temp_path = temp_file.name
+                  
+                  try:
+                      if content_type == "application/pdf":
+                          return self.extract_from_pdf(temp_path)
+                      elif content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                          return self.extract_from_docx(temp_path)
+                      elif content_type == "text/plain":
+                          with open(temp_path, 'r', encoding='utf-8') as f:
+                              return f.read()
+                      elif content_type == "text/markdown":
+                          with open(temp_path, 'r', encoding='utf-8') as f:
+                              md_content = f.read()
+                              html = markdown.markdown(md_content)
+                              soup = BeautifulSoup(html, 'html.parser')
+                              return soup.get_text()
+                      else:
+                          raise ValueError(f"Unsupported content type: {content_type}")
+                  finally:
+                      os.unlink(temp_path)
+              
+              def extract_from_pdf(self, file_path: str) -> str:
+                  """Extract text from PDF file"""
+                  text = ""
+                  with pdfplumber.open(file_path) as pdf:
+                      for page in pdf.pages:
+                          page_text = page.extract_text()
+                          if page_text:
+                              text += page_text + "\n"
+                  return text
+              
+              def extract_from_docx(self, file_path: str) -> str:
+                  """Extract text from DOCX file"""
+                  doc = Document(file_path)
+                  text = ""
+                  for paragraph in doc.paragraphs:
+                      text += paragraph.text + "\n"
+                  return text
+              
+              async def preprocess_content(self, content: str, metadata: DocumentMetadata) -> str:
+                  """Preprocess and clean content"""
+                  # Remove excessive whitespace
+                  content = ' '.join(content.split())
+                  
+                  # Remove special characters if needed
+                  # content = re.sub(r'[^\w\s]', '', content)
+                  
+                  # Language-specific preprocessing
+                  if metadata.language == "en":
+                      # English-specific preprocessing
+                      pass
+                  
+                  return content
+              
+              async def chunk_content(self, content: str, options: Dict[str, Any]) -> List[str]:
+                  """Chunk content into smaller pieces"""
+                  chunk_size = options.get("chunk_size", 512)
+                  overlap = options.get("overlap", 50)
+                  
+                  # Simple sentence-based chunking
+                  sentences = content.split('. ')
+                  chunks = []
+                  current_chunk = ""
+                  
+                  for sentence in sentences:
+                      if len(current_chunk) + len(sentence) < chunk_size:
+                          current_chunk += sentence + ". "
+                      else:
+                          if current_chunk:
+                              chunks.append(current_chunk.strip())
+                          current_chunk = sentence + ". "
+                  
+                  if current_chunk:
+                      chunks.append(current_chunk.strip())
+                  
+                  return chunks
+              
+              async def generate_embeddings(self, chunks: List[str]) -> List[List[float]]:
+                  """Generate embeddings for chunks"""
+                  with embedding_generation_duration.time():
+                      if OPENAI_API_KEY:
+                          return await self.generate_openai_embeddings(chunks)
+                      else:
+                          return self.generate_local_embeddings(chunks)
+              
+              async def generate_openai_embeddings(self, chunks: List[str]) -> List[List[float]]:
+                  """Generate embeddings using OpenAI API"""
+                  embeddings = []
+                  for chunk in chunks:
+                      response = openai.Embedding.create(
+                          model="text-embedding-ada-002",
+                          input=chunk
+                      )
+                      embeddings.append(response['data'][0]['embedding'])
+                  return embeddings
+              
+              def generate_local_embeddings(self, chunks: List[str]) -> List[List[float]]:
+                  """Generate embeddings using local model"""
+                  return self.embedding_model.encode(chunks).tolist()
+              
+              async def extract_knowledge(self, content: str) -> tuple[List[Dict], List[Dict]]:
+                  """Extract entities and relationships from content"""
+                  # Extract entities using NER
+                  entities = []
+                  ner_results = self.ner_pipeline(content)
+                  
+                  for entity in ner_results:
+                      entities.append({
+                          "text": entity["word"],
+                          "label": entity["entity_group"],
+                          "confidence": entity["score"],
+                          "start": entity.get("start", 0),
+                          "end": entity.get("end", 0)
+                      })
+                  
+                  # Extract relationships using spaCy
+                  relationships = []
+                  doc = self.nlp_model(content)
+                  
+                  for sent in doc.sents:
+                      for token in sent:
+                          if token.dep_ in ["nsubj", "dobj"] and token.head.pos_ == "VERB":
+                              relationships.append({
+                                  "subject": token.text,
+                                  "predicate": token.head.text,
+                                  "object": token.head.text,
+                                  "confidence": 0.8
+                              })
+                  
+                  return entities, relationships
+              
+              async def store_vectors(self, document_id: str, chunks: List[str], 
+                                   embeddings: List[List[float]], metadata: DocumentMetadata):
+                  """Store vectors in Weaviate"""
+                  try:
+                      for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                          chunk_id = f"{document_id}_{i}"
+                          
+                          data_object = {
+                              "content": chunk,
+                              "document_id": document_id,
+                              "chunk_index": i,
+                              "source": metadata.source,
+                              "content_type": metadata.content_type,
+                              "language": metadata.language,
+                              "classification": metadata.classification,
+                              "created_at": datetime.utcnow().isoformat()
+                          }
+                          
+                          self.weaviate_client.data_object.create(
+                              data_object=data_object,
+                              class_name="DocumentChunk",
+                              uuid=chunk_id,
+                              vector=embedding
+                          )
+                      
+                      storage_operations.labels(operation="create", backend="weaviate").inc()
+                      logger.info(f"Stored {len(chunks)} chunks for document {document_id}")
+                      
+                  except Exception as e:
+                      logger.error(f"Failed to store vectors: {e}")
+                      raise
+              
+              async def store_knowledge_graph(self, document_id: str, entities: List[Dict], 
+                                            relationships: List[Dict]):
+                  """Store entities and relationships in Neo4j"""
+                  try:
+                      with self.neo4j_driver.session() as session:
+                          # Create document node
+                          session.run(
+                              "CREATE (d:Document {id: $document_id, created_at: $created_at})",
+                              document_id=document_id,
+                              created_at=datetime.utcnow().isoformat()
+                          )
+                          
+                          # Create entity nodes
+                          for entity in entities:
+                              session.run(
+                                  "CREATE (e:Entity {text: $text, label: $label, confidence: $confidence, document_id: $document_id})",
+                                  text=entity["text"],
+                                  label=entity["label"],
+                                  confidence=entity["confidence"],
+                                  document_id=document_id
+                              )
+                          
+                          # Create relationships
+                          for rel in relationships:
+                              session.run(
+                                  "MATCH (s:Entity {text: $subject, document_id: $document_id}), "
+                                  "(o:Entity {text: $object, document_id: $document_id}) "
+                                  "CREATE (s)-[:RELATES_TO {predicate: $predicate, confidence: $confidence}]->(o)",
+                                  subject=rel["subject"],
+                                  object=rel["object"],
+                                  predicate=rel["predicate"],
+                                  confidence=rel["confidence"],
+                                  document_id=document_id
+                              )
+                      
+                      storage_operations.labels(operation="create", backend="neo4j").inc()
+                      logger.info(f"Stored knowledge graph for document {document_id}")
+                      
+                  except Exception as e:
+                      logger.error(f"Failed to store knowledge graph: {e}")
+                      raise
+              
+              async def calculate_quality_score(self, content: str, chunks: List[str], 
+                                              entities: List[Dict]) -> float:
+                  """Calculate content quality score"""
+                  score = 0.0
+                  
+                  # Content length score (0-0.3)
+                  content_length_score = min(len(content) / 10000, 0.3)
+                  score += content_length_score
+                  
+                  # Chunk coherence score (0-0.4)
+                  if len(chunks) > 1:
+                      chunk_embeddings = self.embedding_model.encode(chunks)
+                      similarities = cosine_similarity(chunk_embeddings)
+                      avg_similarity = np.mean(similarities[np.triu_indices_from(similarities, k=1)])
+                      coherence_score = min(avg_similarity * 0.4, 0.4)
+                      score += coherence_score
+                  
+                  # Entity richness score (0-0.3)
+                  entity_score = min(len(entities) / 50 * 0.3, 0.3)
+                  score += entity_score
+                  
+                  return min(score, 1.0)
+          
+          # Initialize processor
+          processor = KnowledgeProcessor()
+          
+          # API Endpoints
+          @app.post("/api/v1/knowledge/process", response_model=ProcessingResult)
+          async def process_document(
+              request: ProcessingRequest,
+              background_tasks: BackgroundTasks
+          ):
+              """Process a document through the knowledge pipeline"""
+              return await processor.process_document(request)
+          
+          @app.post("/api/v1/knowledge/upload", response_model=ProcessingResult)
+          async def upload_and_process(
+              file: UploadFile = File(...),
+              metadata: str = None,
+              background_tasks: BackgroundTasks = None
+          ):
+              """Upload and process a file"""
+              try:
+                  # Parse metadata
+                  if metadata:
+                      metadata_dict = json.loads(metadata)
+                      doc_metadata = DocumentMetadata(**metadata_dict)
+                  else:
+                      doc_metadata = DocumentMetadata(
+                          source=file.filename,
+                          content_type=ContentType.PDF if file.filename.endswith('.pdf') else ContentType.TXT
+                      )
+                  
+                  # Extract content from file
+                  content = await processor.extract_from_file(file)
+                  
+                  # Create processing request
+                  request = ProcessingRequest(
+                      content=content,
+                      metadata=doc_metadata
+                  )
+                  
+                  return await processor.process_document(request)
+                  
+              except Exception as e:
+                  logger.error(f"Failed to upload and process file: {e}")
+                  raise HTTPException(status_code=500, detail=str(e))
+          
+          @app.get("/api/v1/knowledge/search")
+          async def search_knowledge(
+              query: str,
+              limit: int = 10,
+              similarity_threshold: float = 0.7
+          ):
+              """Search knowledge base using semantic similarity"""
+              try:
+                  # Generate query embedding
+                  query_embedding = processor.embedding_model.encode([query])[0].tolist()
+                  
+                  # Search in Weaviate
+                  result = processor.weaviate_client.query.get("DocumentChunk", [
+                      "content", "document_id", "chunk_index", "source", "content_type"
+                  ]).with_near_vector({
+                      "vector": query_embedding,
+                      "certainty": similarity_threshold
+                  }).with_limit(limit).do()
+                  
+                  return {
+                      "query": query,
+                      "results": result.get("data", {}).get("Get", {}).get("DocumentChunk", [])
+                  }
+                  
+              except Exception as e:
+                  logger.error(f"Failed to search knowledge base: {e}")
+                  raise HTTPException(status_code=500, detail=str(e))
+          
+          @app.get("/api/v1/knowledge/entities/{document_id}")
+          async def get_document_entities(document_id: str):
+              """Get entities for a specific document"""
+              try:
+                  with processor.neo4j_driver.session() as session:
+                      result = session.run(
+                          "MATCH (e:Entity {document_id: $document_id}) RETURN e",
+                          document_id=document_id
+                      )
+                      entities = [record["e"] for record in result]
+                      return {"document_id": document_id, "entities": entities}
+                      
+              except Exception as e:
+                  logger.error(f"Failed to get entities: {e}")
+                  raise HTTPException(status_code=500, detail=str(e))
+          
+          @app.get("/health")
+          async def health_check():
+              return {"status": "healthy", "service": "knowledge-processing"}
+          
+          @app.get("/metrics")
+          async def get_metrics():
+              """Prometheus metrics endpoint"""
+              from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+              return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+          
+          # Initialize on startup
+          @app.on_event("startup")
+          async def startup_event():
+              # Start Prometheus metrics server
+              start_http_server(9091)
+              logger.info("Knowledge processing service started")
+          
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="0.0.0.0", port=8083)
+          EOF
+          
+          # Start the service
+          cd /app && python knowledge_processor.py
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8083
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8083
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8083
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+      volumes:
+      - name: config-volume
+        configMap:
+          name: knowledge-pipeline-config
+      - name: temp-storage
+        emptyDir:
+          sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knowledge-pipeline-service
+  namespace: nexus-ai
+  labels:
+    app: knowledge-pipeline
+    component: knowledge-processing
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8083
+    targetPort: 8083
+    protocol: TCP
+  - name: metrics
+    port: 9091
+    targetPort: 9091
+    protocol: TCP
+  selector:
+    app: knowledge-pipeline
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: neo4j
+  namespace: nexus-ai
+  labels:
+    app: neo4j
+    component: knowledge-graph
+spec:
+  serviceName: neo4j-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neo4j
+  template:
+    metadata:
+      labels:
+        app: neo4j
+        component: knowledge-graph
+    spec:
+      serviceAccountName: nexus-ai
+      containers:
+      - name: neo4j
+        image: neo4j:5.15-community
+        ports:
+        - name: http
+          containerPort: 7474
+        - name: bolt
+          containerPort: 7687
+        env:
+        - name: NEO4J_AUTH
+          value: "neo4j/NexusGraph2024!"
+        - name: NEO4J_PLUGINS
+          value: '["apoc", "graph-data-science"]'
+        - name: NEO4J_dbms_security_procedures_unrestricted
+          value: "apoc.*,gds.*"
+        - name: NEO4J_dbms_security_procedures_allowlist
+          value: "apoc.*,gds.*"
+        - name: NEO4J_dbms_memory_heap_initial__size
+          value: "1G"
+        - name: NEO4J_dbms_memory_heap_max__size
+          value: "2G"
+        - name: NEO4J_dbms_memory_pagecache_size
+          value: "1G"
+        volumeMounts:
+        - name: neo4j-data
+          mountPath: /data
+        - name: neo4j-logs
+          mountPath: /logs
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7474
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7474
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+  volumeClaimTemplates:
+  - metadata:
+      name: neo4j-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 100Gi
+  - metadata:
+      name: neo4j-logs
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j
+  namespace: nexus-ai
+  labels:
+    app: neo4j
+    component: knowledge-graph
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 7474
+    targetPort: 7474
+    protocol: TCP
+  - name: bolt
+    port: 7687
+    targetPort: 7687
+    protocol: TCP
+  selector:
+    app: neo4j
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j-headless
+  namespace: nexus-ai
+  labels:
+    app: neo4j
+    component: knowledge-graph
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: http
+    port: 7474
+    targetPort: 7474
+    protocol: TCP
+  - name: bolt
+    port: 7687
+    targetPort: 7687
+    protocol: TCP
+  selector:
+    app: neo4j
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-secrets
+  namespace: nexus-ai
+type: Opaque
+data:
+  username: bmVvNGo=  # neo4j
+  password: TmV4dXNHcmFwaDIwMjQh  # NexusGraph2024!
+

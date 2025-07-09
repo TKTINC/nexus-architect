@@ -1,0 +1,1100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-framework-config
+  namespace: nexus-ai
+data:
+  ai_config.yaml: |
+    # Multi-Model AI Framework Configuration
+    framework:
+      name: "nexus-ai-framework"
+      version: "1.0.0"
+      description: "Intelligent multi-model AI framework with safety controls"
+      
+    models:
+      openai:
+        provider: "openai"
+        models:
+          gpt-4:
+            model_id: "gpt-4"
+            max_tokens: 8192
+            temperature: 0.7
+            top_p: 0.9
+            frequency_penalty: 0.0
+            presence_penalty: 0.0
+            cost_per_1k_tokens: 0.03
+            capabilities: ["chat", "reasoning", "code", "analysis"]
+            safety_level: "high"
+          gpt-3.5-turbo:
+            model_id: "gpt-3.5-turbo"
+            max_tokens: 4096
+            temperature: 0.7
+            top_p: 0.9
+            cost_per_1k_tokens: 0.002
+            capabilities: ["chat", "simple_reasoning", "code"]
+            safety_level: "medium"
+          text-embedding-ada-002:
+            model_id: "text-embedding-ada-002"
+            dimensions: 1536
+            cost_per_1k_tokens: 0.0001
+            capabilities: ["embedding"]
+            safety_level: "low"
+            
+      anthropic:
+        provider: "anthropic"
+        models:
+          claude-3-opus:
+            model_id: "claude-3-opus-20240229"
+            max_tokens: 4096
+            temperature: 0.7
+            top_p: 0.9
+            cost_per_1k_tokens: 0.015
+            capabilities: ["chat", "reasoning", "analysis", "safety"]
+            safety_level: "very_high"
+          claude-3-sonnet:
+            model_id: "claude-3-sonnet-20240229"
+            max_tokens: 4096
+            temperature: 0.7
+            top_p: 0.9
+            cost_per_1k_tokens: 0.003
+            capabilities: ["chat", "reasoning", "code"]
+            safety_level: "high"
+            
+      local:
+        provider: "torchserve"
+        models:
+          nexus-general-chat:
+            model_id: "nexus-general-chat"
+            endpoint: "http://torchserve-service.nexus-ai:8080"
+            max_tokens: 2048
+            capabilities: ["chat", "domain_specific"]
+            safety_level: "medium"
+          nexus-code-assistant:
+            model_id: "nexus-code-assistant"
+            endpoint: "http://torchserve-service.nexus-ai:8080"
+            max_tokens: 4096
+            capabilities: ["code", "debugging", "optimization"]
+            safety_level: "medium"
+            
+    routing:
+      strategy: "intelligent"
+      fallback_enabled: true
+      load_balancing: true
+      
+      rules:
+        - name: "safety_critical"
+          condition: "safety_level == 'critical'"
+          target_models: ["claude-3-opus"]
+          priority: 1
+          
+        - name: "code_generation"
+          condition: "task_type == 'code' and complexity == 'high'"
+          target_models: ["gpt-4", "nexus-code-assistant"]
+          priority: 2
+          
+        - name: "simple_chat"
+          condition: "task_type == 'chat' and complexity == 'low'"
+          target_models: ["gpt-3.5-turbo", "nexus-general-chat"]
+          priority: 3
+          
+        - name: "cost_optimization"
+          condition: "cost_priority == 'high'"
+          target_models: ["gpt-3.5-turbo", "nexus-general-chat"]
+          priority: 4
+          
+        - name: "default"
+          condition: "true"
+          target_models: ["gpt-4", "claude-3-sonnet"]
+          priority: 5
+          
+    safety:
+      enabled: true
+      content_filtering:
+        enabled: true
+        filters:
+          - "hate_speech"
+          - "violence"
+          - "sexual_content"
+          - "self_harm"
+          - "illegal_activities"
+          - "privacy_violation"
+          - "misinformation"
+        severity_threshold: "medium"
+        
+      prompt_injection_detection:
+        enabled: true
+        models: ["prompt_injection_classifier"]
+        confidence_threshold: 0.8
+        
+      output_validation:
+        enabled: true
+        checks:
+          - "factual_consistency"
+          - "bias_detection"
+          - "toxicity_scoring"
+          - "privacy_leakage"
+        
+      rate_limiting:
+        enabled: true
+        limits:
+          per_user_per_minute: 60
+          per_user_per_hour: 1000
+          per_user_per_day: 10000
+          
+      audit_logging:
+        enabled: true
+        log_level: "INFO"
+        include_prompts: false
+        include_responses: false
+        retention_days: 90
+        
+    monitoring:
+      metrics:
+        - "requests_total"
+        - "request_duration_seconds"
+        - "model_usage_total"
+        - "cost_tracking_total"
+        - "safety_violations_total"
+        - "error_rate"
+        
+      alerts:
+        - name: "high_error_rate"
+          condition: "error_rate > 0.05"
+          severity: "warning"
+        - name: "safety_violations"
+          condition: "safety_violations > 10 per hour"
+          severity: "critical"
+        - name: "cost_threshold"
+          condition: "daily_cost > 1000"
+          severity: "warning"
+          
+    caching:
+      enabled: true
+      backend: "redis"
+      ttl_seconds: 3600
+      cache_embeddings: true
+      cache_completions: false
+      
+    context_management:
+      enabled: true
+      max_context_length: 32768
+      context_compression: true
+      conversation_memory: true
+      memory_retention_hours: 24
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-framework-service
+  namespace: nexus-ai
+  labels:
+    app: ai-framework
+    component: ai-orchestration
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-framework
+  template:
+    metadata:
+      labels:
+        app: ai-framework
+        component: ai-orchestration
+    spec:
+      serviceAccountName: nexus-ai
+      containers:
+      - name: ai-orchestrator
+        image: python:3.11-slim
+        ports:
+        - name: http
+          containerPort: 8084
+        - name: metrics
+          containerPort: 9092
+        env:
+        - name: AI_CONFIG_PATH
+          value: "/app/config/ai_config.yaml"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-provider-secrets
+              key: openai-api-key
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-provider-secrets
+              key: anthropic-api-key
+        - name: REDIS_URL
+          value: "redis://redis.nexus-infrastructure:6379"
+        - name: WEAVIATE_URL
+          value: "http://weaviate.nexus-ai:8080"
+        - name: TORCHSERVE_URL
+          value: "http://torchserve-service.nexus-ai:8080"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Install required packages
+          pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic requests \
+                     openai anthropic redis weaviate-client tiktoken \
+                     prometheus-client transformers torch sentence-transformers \
+                     asyncio aiohttp numpy pandas scikit-learn nltk spacy \
+                     langchain langdetect textstat
+          
+          # Download required models
+          python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+          python -m spacy download en_core_web_sm
+          
+          # Create AI framework service
+          cat > /app/ai_framework.py <<'EOF'
+          """
+          Multi-Model AI Framework Service
+          Intelligent routing, safety controls, and model orchestration
+          """
+          
+          import os
+          import json
+          import logging
+          import asyncio
+          import hashlib
+          import time
+          from datetime import datetime, timedelta
+          from typing import List, Dict, Any, Optional, Union, Tuple
+          from enum import Enum
+          import yaml
+          import re
+          
+          from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
+          from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+          from pydantic import BaseModel, Field
+          import requests
+          import aiohttp
+          import redis
+          import openai
+          import anthropic
+          import tiktoken
+          from prometheus_client import Counter, Histogram, Gauge, start_http_server
+          
+          # ML and safety imports
+          import numpy as np
+          import pandas as pd
+          from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+          from sentence_transformers import SentenceTransformer
+          import spacy
+          from langdetect import detect
+          import textstat
+          
+          # Configure logging
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          # Prometheus metrics
+          requests_total = Counter('ai_requests_total', 'Total AI requests', ['model', 'task_type', 'status'])
+          request_duration = Histogram('ai_request_duration_seconds', 'AI request duration', ['model'])
+          model_usage = Counter('ai_model_usage_total', 'Model usage count', ['provider', 'model'])
+          cost_tracking = Counter('ai_cost_tracking_total', 'Cost tracking', ['provider', 'model'])
+          safety_violations = Counter('ai_safety_violations_total', 'Safety violations', ['violation_type'])
+          active_conversations = Gauge('ai_active_conversations', 'Active conversations')
+          
+          # Initialize FastAPI app
+          app = FastAPI(
+              title="Nexus AI Framework",
+              description="Multi-model AI orchestration with safety controls",
+              version="1.0.0"
+          )
+          
+          # Security
+          security = HTTPBearer()
+          
+          # Load configuration
+          AI_CONFIG_PATH = os.getenv("AI_CONFIG_PATH", "/app/config/ai_config.yaml")
+          
+          class TaskType(str, Enum):
+              CHAT = "chat"
+              CODE = "code"
+              ANALYSIS = "analysis"
+              REASONING = "reasoning"
+              EMBEDDING = "embedding"
+              SAFETY_CHECK = "safety_check"
+          
+          class SafetyLevel(str, Enum):
+              LOW = "low"
+              MEDIUM = "medium"
+              HIGH = "high"
+              VERY_HIGH = "very_high"
+              CRITICAL = "critical"
+          
+          class ModelProvider(str, Enum):
+              OPENAI = "openai"
+              ANTHROPIC = "anthropic"
+              LOCAL = "local"
+          
+          class AIRequest(BaseModel):
+              prompt: str
+              task_type: TaskType = TaskType.CHAT
+              model_preference: Optional[str] = None
+              max_tokens: Optional[int] = None
+              temperature: Optional[float] = None
+              safety_level: SafetyLevel = SafetyLevel.MEDIUM
+              context: Optional[List[Dict[str, str]]] = []
+              user_id: Optional[str] = None
+              conversation_id: Optional[str] = None
+              metadata: Dict[str, Any] = {}
+          
+          class AIResponse(BaseModel):
+              response: str
+              model_used: str
+              provider: str
+              tokens_used: int
+              cost: float
+              processing_time: float
+              safety_score: float
+              confidence: float
+              conversation_id: Optional[str] = None
+              metadata: Dict[str, Any] = {}
+          
+          class SafetyResult(BaseModel):
+              is_safe: bool
+              violations: List[str] = []
+              safety_score: float
+              confidence: float
+              details: Dict[str, Any] = {}
+          
+          class AIFramework:
+              def __init__(self):
+                  self.config = None
+                  self.redis_client = None
+                  self.openai_client = None
+                  self.anthropic_client = None
+                  self.safety_models = {}
+                  self.embedding_model = None
+                  self.nlp_model = None
+                  self.load_configuration()
+                  self.initialize_clients()
+                  self.initialize_safety_models()
+              
+              def load_configuration(self):
+                  """Load AI framework configuration"""
+                  try:
+                      with open(AI_CONFIG_PATH, 'r') as f:
+                          self.config = yaml.safe_load(f)
+                      logger.info("AI framework configuration loaded")
+                  except Exception as e:
+                      logger.error(f"Failed to load configuration: {e}")
+                      raise
+              
+              def initialize_clients(self):
+                  """Initialize API clients"""
+                  try:
+                      # Redis client
+                      redis_url = os.getenv("REDIS_URL", "redis://redis.nexus-infrastructure:6379")
+                      self.redis_client = redis.from_url(redis_url)
+                      
+                      # OpenAI client
+                      openai_api_key = os.getenv("OPENAI_API_KEY")
+                      if openai_api_key:
+                          openai.api_key = openai_api_key
+                          self.openai_client = openai
+                      
+                      # Anthropic client
+                      anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+                      if anthropic_api_key:
+                          self.anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+                      
+                      logger.info("API clients initialized")
+                  except Exception as e:
+                      logger.error(f"Failed to initialize clients: {e}")
+                      raise
+              
+              def initialize_safety_models(self):
+                  """Initialize safety and content filtering models"""
+                  try:
+                      # Content safety classifier
+                      self.safety_models['content_filter'] = pipeline(
+                          "text-classification",
+                          model="unitary/toxic-bert",
+                          device=-1  # CPU
+                      )
+                      
+                      # Prompt injection detector
+                      self.safety_models['prompt_injection'] = pipeline(
+                          "text-classification",
+                          model="deepset/deberta-v3-base-injection",
+                          device=-1  # CPU
+                      )
+                      
+                      # Embedding model for similarity checks
+                      self.embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+                      
+                      # spaCy model for text analysis
+                      self.nlp_model = spacy.load("en_core_web_sm")
+                      
+                      logger.info("Safety models initialized")
+                  except Exception as e:
+                      logger.error(f"Failed to initialize safety models: {e}")
+                      # Continue without safety models for now
+                      pass
+              
+              async def process_request(self, request: AIRequest) -> AIResponse:
+                  """Process AI request with intelligent routing and safety checks"""
+                  start_time = time.time()
+                  
+                  try:
+                      # Step 1: Safety check
+                      safety_result = await self.check_safety(request.prompt, request.safety_level)
+                      if not safety_result.is_safe:
+                          safety_violations.labels(violation_type="content_filter").inc()
+                          raise HTTPException(
+                              status_code=400, 
+                              detail=f"Content safety violation: {', '.join(safety_result.violations)}"
+                          )
+                      
+                      # Step 2: Model selection
+                      selected_model = await self.select_model(request)
+                      
+                      # Step 3: Context management
+                      context = await self.manage_context(request)
+                      
+                      # Step 4: Generate response
+                      response_text, tokens_used, cost = await self.generate_response(
+                          selected_model, request, context
+                      )
+                      
+                      # Step 5: Output validation
+                      output_safety = await self.validate_output(response_text)
+                      if not output_safety.is_safe:
+                          safety_violations.labels(violation_type="output_filter").inc()
+                          response_text = "I apologize, but I cannot provide that response due to safety concerns."
+                      
+                      # Step 6: Update metrics
+                      processing_time = time.time() - start_time
+                      provider = selected_model.split(':')[0]
+                      model_name = selected_model.split(':')[1]
+                      
+                      requests_total.labels(
+                          model=model_name, 
+                          task_type=request.task_type, 
+                          status="success"
+                      ).inc()
+                      request_duration.labels(model=model_name).observe(processing_time)
+                      model_usage.labels(provider=provider, model=model_name).inc()
+                      cost_tracking.labels(provider=provider, model=model_name).inc(cost)
+                      
+                      # Step 7: Cache response if enabled
+                      if self.config.get('caching', {}).get('enabled', False):
+                          await self.cache_response(request, response_text)
+                      
+                      return AIResponse(
+                          response=response_text,
+                          model_used=model_name,
+                          provider=provider,
+                          tokens_used=tokens_used,
+                          cost=cost,
+                          processing_time=processing_time,
+                          safety_score=safety_result.safety_score,
+                          confidence=output_safety.confidence,
+                          conversation_id=request.conversation_id,
+                          metadata={
+                              "safety_checks": len(safety_result.violations) == 0,
+                              "cached": False,
+                              "context_length": len(context)
+                          }
+                      )
+                      
+                  except Exception as e:
+                      processing_time = time.time() - start_time
+                      requests_total.labels(
+                          model="unknown", 
+                          task_type=request.task_type, 
+                          status="error"
+                      ).inc()
+                      logger.error(f"Failed to process AI request: {e}")
+                      raise HTTPException(status_code=500, detail=str(e))
+              
+              async def check_safety(self, prompt: str, safety_level: SafetyLevel) -> SafetyResult:
+                  """Comprehensive safety checking"""
+                  violations = []
+                  safety_score = 1.0
+                  
+                  try:
+                      # Content filtering
+                      if 'content_filter' in self.safety_models:
+                          content_result = self.safety_models['content_filter'](prompt)
+                          if content_result[0]['label'] == 'TOXIC' and content_result[0]['score'] > 0.7:
+                              violations.append("toxic_content")
+                              safety_score -= 0.3
+                      
+                      # Prompt injection detection
+                      if 'prompt_injection' in self.safety_models:
+                          injection_result = self.safety_models['prompt_injection'](prompt)
+                          if injection_result[0]['label'] == 'INJECTION' and injection_result[0]['score'] > 0.8:
+                              violations.append("prompt_injection")
+                              safety_score -= 0.5
+                      
+                      # Pattern-based checks
+                      dangerous_patterns = [
+                          r'ignore.{0,20}previous.{0,20}instructions',
+                          r'system.{0,10}prompt',
+                          r'jailbreak',
+                          r'pretend.{0,20}you.{0,20}are',
+                      ]
+                      
+                      for pattern in dangerous_patterns:
+                          if re.search(pattern, prompt.lower()):
+                              violations.append("suspicious_pattern")
+                              safety_score -= 0.2
+                              break
+                      
+                      # Privacy check
+                      if self.contains_pii(prompt):
+                          violations.append("privacy_violation")
+                          safety_score -= 0.3
+                      
+                      # Adjust safety score based on level
+                      safety_threshold = {
+                          SafetyLevel.LOW: 0.3,
+                          SafetyLevel.MEDIUM: 0.5,
+                          SafetyLevel.HIGH: 0.7,
+                          SafetyLevel.VERY_HIGH: 0.8,
+                          SafetyLevel.CRITICAL: 0.9
+                      }
+                      
+                      is_safe = safety_score >= safety_threshold[safety_level]
+                      
+                      return SafetyResult(
+                          is_safe=is_safe,
+                          violations=violations,
+                          safety_score=max(safety_score, 0.0),
+                          confidence=0.85,
+                          details={"threshold": safety_threshold[safety_level]}
+                      )
+                      
+                  except Exception as e:
+                      logger.error(f"Safety check failed: {e}")
+                      return SafetyResult(
+                          is_safe=True,  # Fail open for now
+                          violations=[],
+                          safety_score=0.5,
+                          confidence=0.0
+                      )
+              
+              def contains_pii(self, text: str) -> bool:
+                  """Check for personally identifiable information"""
+                  pii_patterns = [
+                      r'\b\d{3}-\d{2}-\d{4}\b',  # SSN
+                      r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b',  # Credit card
+                      r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # Email
+                      r'\b\d{3}[- ]?\d{3}[- ]?\d{4}\b',  # Phone number
+                  ]
+                  
+                  for pattern in pii_patterns:
+                      if re.search(pattern, text):
+                          return True
+                  return False
+              
+              async def select_model(self, request: AIRequest) -> str:
+                  """Intelligent model selection based on request characteristics"""
+                  # Check for explicit model preference
+                  if request.model_preference:
+                      return request.model_preference
+                  
+                  # Analyze request characteristics
+                  prompt_length = len(request.prompt)
+                  complexity = self.assess_complexity(request.prompt, request.task_type)
+                  
+                  # Apply routing rules
+                  routing_rules = self.config.get('routing', {}).get('rules', [])
+                  
+                  for rule in sorted(routing_rules, key=lambda x: x.get('priority', 999)):
+                      if self.evaluate_rule_condition(rule['condition'], request, complexity):
+                          target_models = rule['target_models']
+                          # Select first available model
+                          for model in target_models:
+                              if self.is_model_available(model):
+                                  return f"{self.get_model_provider(model)}:{model}"
+                  
+                  # Default fallback
+                  return "openai:gpt-3.5-turbo"
+              
+              def assess_complexity(self, prompt: str, task_type: TaskType) -> str:
+                  """Assess prompt complexity"""
+                  # Simple heuristics for complexity assessment
+                  word_count = len(prompt.split())
+                  sentence_count = len(prompt.split('.'))
+                  
+                  if task_type == TaskType.CODE:
+                      if 'complex' in prompt.lower() or 'algorithm' in prompt.lower():
+                          return "high"
+                      elif word_count > 100:
+                          return "medium"
+                      else:
+                          return "low"
+                  
+                  if word_count > 200 or sentence_count > 10:
+                      return "high"
+                  elif word_count > 50 or sentence_count > 3:
+                      return "medium"
+                  else:
+                      return "low"
+              
+              def evaluate_rule_condition(self, condition: str, request: AIRequest, complexity: str) -> bool:
+                  """Evaluate routing rule condition"""
+                  # Simple condition evaluation
+                  # In production, this would be more sophisticated
+                  
+                  if "safety_level == 'critical'" in condition:
+                      return request.safety_level == SafetyLevel.CRITICAL
+                  
+                  if "task_type == 'code'" in condition:
+                      return request.task_type == TaskType.CODE
+                  
+                  if "complexity == 'high'" in condition:
+                      return complexity == "high"
+                  
+                  if "complexity == 'low'" in condition:
+                      return complexity == "low"
+                  
+                  if condition == "true":
+                      return True
+                  
+                  return False
+              
+              def is_model_available(self, model: str) -> bool:
+                  """Check if model is available"""
+                  # Simple availability check
+                  if model.startswith('gpt') and self.openai_client:
+                      return True
+                  if model.startswith('claude') and self.anthropic_client:
+                      return True
+                  if model.startswith('nexus'):
+                      return True  # Assume local models are available
+                  return False
+              
+              def get_model_provider(self, model: str) -> str:
+                  """Get provider for model"""
+                  if model.startswith('gpt') or 'text-embedding' in model:
+                      return "openai"
+                  if model.startswith('claude'):
+                      return "anthropic"
+                  if model.startswith('nexus'):
+                      return "local"
+                  return "unknown"
+              
+              async def manage_context(self, request: AIRequest) -> List[Dict[str, str]]:
+                  """Manage conversation context"""
+                  context = request.context or []
+                  
+                  if request.conversation_id and self.redis_client:
+                      try:
+                          # Retrieve conversation history
+                          history_key = f"conversation:{request.conversation_id}"
+                          history = self.redis_client.get(history_key)
+                          if history:
+                              stored_context = json.loads(history)
+                              context.extend(stored_context)
+                      except Exception as e:
+                          logger.error(f"Failed to retrieve conversation history: {e}")
+                  
+                  # Limit context length
+                  max_context_length = self.config.get('context_management', {}).get('max_context_length', 32768)
+                  
+                  # Simple context truncation (in production, use more sophisticated methods)
+                  total_length = sum(len(msg.get('content', '')) for msg in context)
+                  while total_length > max_context_length and len(context) > 1:
+                      context.pop(0)
+                      total_length = sum(len(msg.get('content', '')) for msg in context)
+                  
+                  return context
+              
+              async def generate_response(self, model: str, request: AIRequest, context: List[Dict[str, str]]) -> Tuple[str, int, float]:
+                  """Generate response using selected model"""
+                  provider, model_name = model.split(':', 1)
+                  
+                  if provider == "openai":
+                      return await self.generate_openai_response(model_name, request, context)
+                  elif provider == "anthropic":
+                      return await self.generate_anthropic_response(model_name, request, context)
+                  elif provider == "local":
+                      return await self.generate_local_response(model_name, request, context)
+                  else:
+                      raise ValueError(f"Unknown provider: {provider}")
+              
+              async def generate_openai_response(self, model: str, request: AIRequest, context: List[Dict[str, str]]) -> Tuple[str, int, float]:
+                  """Generate response using OpenAI"""
+                  try:
+                      messages = context + [{"role": "user", "content": request.prompt}]
+                      
+                      response = openai.ChatCompletion.create(
+                          model=model,
+                          messages=messages,
+                          max_tokens=request.max_tokens or 1000,
+                          temperature=request.temperature or 0.7,
+                          top_p=0.9,
+                          frequency_penalty=0.0,
+                          presence_penalty=0.0
+                      )
+                      
+                      response_text = response.choices[0].message.content
+                      tokens_used = response.usage.total_tokens
+                      
+                      # Calculate cost (simplified)
+                      model_config = self.config.get('models', {}).get('openai', {}).get('models', {}).get(model, {})
+                      cost_per_1k = model_config.get('cost_per_1k_tokens', 0.002)
+                      cost = (tokens_used / 1000) * cost_per_1k
+                      
+                      return response_text, tokens_used, cost
+                      
+                  except Exception as e:
+                      logger.error(f"OpenAI generation failed: {e}")
+                      raise
+              
+              async def generate_anthropic_response(self, model: str, request: AIRequest, context: List[Dict[str, str]]) -> Tuple[str, int, float]:
+                  """Generate response using Anthropic"""
+                  try:
+                      # Convert context to Anthropic format
+                      prompt = ""
+                      for msg in context:
+                          role = msg.get('role', 'user')
+                          content = msg.get('content', '')
+                          if role == 'user':
+                              prompt += f"Human: {content}\n\n"
+                          else:
+                              prompt += f"Assistant: {content}\n\n"
+                      
+                      prompt += f"Human: {request.prompt}\n\nAssistant:"
+                      
+                      response = self.anthropic_client.completions.create(
+                          model=model,
+                          prompt=prompt,
+                          max_tokens_to_sample=request.max_tokens or 1000,
+                          temperature=request.temperature or 0.7,
+                          top_p=0.9
+                      )
+                      
+                      response_text = response.completion
+                      tokens_used = len(prompt.split()) + len(response_text.split())  # Rough estimate
+                      
+                      # Calculate cost (simplified)
+                      model_config = self.config.get('models', {}).get('anthropic', {}).get('models', {}).get(model, {})
+                      cost_per_1k = model_config.get('cost_per_1k_tokens', 0.003)
+                      cost = (tokens_used / 1000) * cost_per_1k
+                      
+                      return response_text, tokens_used, cost
+                      
+                  except Exception as e:
+                      logger.error(f"Anthropic generation failed: {e}")
+                      raise
+              
+              async def generate_local_response(self, model: str, request: AIRequest, context: List[Dict[str, str]]) -> Tuple[str, int, float]:
+                  """Generate response using local TorchServe model"""
+                  try:
+                      torchserve_url = os.getenv("TORCHSERVE_URL", "http://torchserve-service.nexus-ai:8080")
+                      
+                      # Prepare payload for TorchServe
+                      payload = {
+                          "prompt": request.prompt,
+                          "max_tokens": request.max_tokens or 1000,
+                          "temperature": request.temperature or 0.7,
+                          "context": context
+                      }
+                      
+                      async with aiohttp.ClientSession() as session:
+                          async with session.post(
+                              f"{torchserve_url}/predictions/{model}",
+                              json=payload
+                          ) as response:
+                              if response.status == 200:
+                                  result = await response.json()
+                                  response_text = result.get('response', '')
+                                  tokens_used = result.get('tokens_used', 0)
+                                  cost = 0.0  # Local models have no API cost
+                                  
+                                  return response_text, tokens_used, cost
+                              else:
+                                  raise HTTPException(status_code=500, detail="Local model generation failed")
+                      
+                  except Exception as e:
+                      logger.error(f"Local model generation failed: {e}")
+                      raise
+              
+              async def validate_output(self, response: str) -> SafetyResult:
+                  """Validate model output for safety"""
+                  violations = []
+                  safety_score = 1.0
+                  
+                  try:
+                      # Content filtering on output
+                      if 'content_filter' in self.safety_models:
+                          content_result = self.safety_models['content_filter'](response)
+                          if content_result[0]['label'] == 'TOXIC' and content_result[0]['score'] > 0.8:
+                              violations.append("toxic_output")
+                              safety_score -= 0.4
+                      
+                      # Check for potential privacy leakage
+                      if self.contains_pii(response):
+                          violations.append("privacy_leakage")
+                          safety_score -= 0.3
+                      
+                      # Check response quality
+                      if len(response.strip()) < 10:
+                          violations.append("low_quality")
+                          safety_score -= 0.2
+                      
+                      return SafetyResult(
+                          is_safe=len(violations) == 0,
+                          violations=violations,
+                          safety_score=max(safety_score, 0.0),
+                          confidence=0.8
+                      )
+                      
+                  except Exception as e:
+                      logger.error(f"Output validation failed: {e}")
+                      return SafetyResult(
+                          is_safe=True,  # Fail open
+                          violations=[],
+                          safety_score=0.5,
+                          confidence=0.0
+                      )
+              
+              async def cache_response(self, request: AIRequest, response: str):
+                  """Cache response for future use"""
+                  try:
+                      if self.redis_client:
+                          cache_key = hashlib.md5(request.prompt.encode()).hexdigest()
+                          ttl = self.config.get('caching', {}).get('ttl_seconds', 3600)
+                          
+                          cache_data = {
+                              "response": response,
+                              "timestamp": datetime.utcnow().isoformat(),
+                              "task_type": request.task_type
+                          }
+                          
+                          self.redis_client.setex(
+                              f"ai_cache:{cache_key}",
+                              ttl,
+                              json.dumps(cache_data)
+                          )
+                  except Exception as e:
+                      logger.error(f"Failed to cache response: {e}")
+          
+          # Initialize framework
+          framework = AIFramework()
+          
+          # API Endpoints
+          @app.post("/api/v1/ai/chat", response_model=AIResponse)
+          async def chat_completion(
+              request: AIRequest,
+              credentials: HTTPAuthorizationCredentials = Depends(security)
+          ):
+              """Generate AI chat completion"""
+              return await framework.process_request(request)
+          
+          @app.post("/api/v1/ai/embedding")
+          async def generate_embedding(
+              text: str,
+              model: str = "text-embedding-ada-002"
+          ):
+              """Generate text embedding"""
+              try:
+                  if model == "text-embedding-ada-002" and framework.openai_client:
+                      response = openai.Embedding.create(
+                          model=model,
+                          input=text
+                      )
+                      return {
+                          "embedding": response['data'][0]['embedding'],
+                          "model": model,
+                          "tokens_used": response['usage']['total_tokens']
+                      }
+                  else:
+                      # Use local embedding model
+                      embedding = framework.embedding_model.encode([text])[0].tolist()
+                      return {
+                          "embedding": embedding,
+                          "model": "local",
+                          "tokens_used": len(text.split())
+                      }
+              except Exception as e:
+                  logger.error(f"Embedding generation failed: {e}")
+                  raise HTTPException(status_code=500, detail=str(e))
+          
+          @app.post("/api/v1/ai/safety-check", response_model=SafetyResult)
+          async def safety_check(
+              text: str,
+              safety_level: SafetyLevel = SafetyLevel.MEDIUM
+          ):
+              """Perform safety check on text"""
+              return await framework.check_safety(text, safety_level)
+          
+          @app.get("/api/v1/ai/models")
+          async def list_models():
+              """List available models"""
+              models = []
+              
+              for provider, config in framework.config.get('models', {}).items():
+                  for model_name, model_config in config.get('models', {}).items():
+                      models.append({
+                          "name": model_name,
+                          "provider": provider,
+                          "capabilities": model_config.get('capabilities', []),
+                          "safety_level": model_config.get('safety_level', 'medium'),
+                          "available": framework.is_model_available(model_name)
+                      })
+              
+              return {"models": models}
+          
+          @app.get("/api/v1/ai/stats")
+          async def get_stats():
+              """Get AI framework statistics"""
+              # This would return real-time statistics in production
+              return {
+                  "total_requests": 1000,
+                  "active_conversations": 50,
+                  "average_response_time": 1.2,
+                  "safety_violations": 5,
+                  "cost_today": 25.50
+              }
+          
+          @app.get("/health")
+          async def health_check():
+              return {"status": "healthy", "service": "ai-framework"}
+          
+          @app.get("/metrics")
+          async def get_metrics():
+              """Prometheus metrics endpoint"""
+              from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+              return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+          
+          # Initialize on startup
+          @app.on_event("startup")
+          async def startup_event():
+              # Start Prometheus metrics server
+              start_http_server(9092)
+              logger.info("AI framework service started")
+          
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="0.0.0.0", port=8084)
+          EOF
+          
+          # Start the service
+          cd /app && python ai_framework.py
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8084
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8084
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8084
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+      volumes:
+      - name: config-volume
+        configMap:
+          name: ai-framework-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-framework-service
+  namespace: nexus-ai
+  labels:
+    app: ai-framework
+    component: ai-orchestration
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8084
+    targetPort: 8084
+    protocol: TCP
+  - name: metrics
+    port: 9092
+    targetPort: 9092
+    protocol: TCP
+  selector:
+    app: ai-framework
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-framework-hpa
+  namespace: nexus-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-framework-service
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: ai_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "50"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 3
+        periodSeconds: 60
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-provider-secrets
+  namespace: nexus-ai
+type: Opaque
+data:
+  # Base64 encoded API keys - replace with actual values
+  anthropic-api-key: YW50aHJvcGljLWFwaS1rZXktcGxhY2Vob2xkZXI=  # anthropic-api-key-placeholder
+
